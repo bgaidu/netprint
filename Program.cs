@@ -20,6 +20,9 @@ namespace PrintServer
         private static TrayIcon _tray;
         private static HealthWatchdog _watchdog;
 
+        /// <summary>poppler 可执行文件目录（单文件模式解压到临时目录；开发模式用输出目录）。</summary>
+        public static string PopplerDir { get; private set; }
+
         public static DateTime StartTime { get; private set; } = DateTime.Now;
 
         /// <summary>重启 Web 服务（托盘菜单、健康看门狗用）。</summary>
@@ -67,6 +70,28 @@ namespace PrintServer
             Directory.CreateDirectory(UploadDir);
             Directory.CreateDirectory(ScannedDir);
             Directory.CreateDirectory(LogDir);
+
+            // poppler: 单文件模式从嵌入资源解压到临时目录；开发模式直接用输出目录
+            try
+            {
+                if (ResourceManager.Exists("poppler_bin/pdftoppm.exe"))
+                {
+                    // 嵌入资源模式: 解压到 %TEMP%\PrintServerPoppler\
+                    PopplerDir = Path.Combine(Path.GetTempPath(), "PrintServerPoppler");
+                    ExtractPoppler();
+                }
+                else
+                {
+                    // 开发模式: 输出目录下的 poppler_bin
+                    var local = Path.Combine(BaseDir, "poppler_bin");
+                    PopplerDir = Directory.Exists(local) ? local : null;
+                }
+                Log.Info("poppler 目录: " + (PopplerDir ?? "(未找到)"));
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("poppler 初始化失败: " + ex.Message);
+            }
 
             // 解析命令行参数: --port=xxxx
             foreach (var a in args)
@@ -141,6 +166,42 @@ namespace PrintServer
                 return principal.IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
             }
             catch { return false; }
+        }
+
+        /// <summary>
+        /// 将嵌入的 poppler_bin 解压到临时目录（pdftoppm 需要以进程方式执行，必须落盘）。
+        /// </summary>
+        private static void ExtractPoppler()
+        {
+            try
+            {
+                Directory.CreateDirectory(PopplerDir);
+
+                // 从嵌入资源清单枚举 poppler 文件
+                foreach (var name in typeof(ResourceManager).Assembly.GetManifestResourceNames())
+                {
+                    // res.poppler_bin.<file>
+                    const string prefix = "res.poppler_bin.";
+                    if (!name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
+                    var fileName = name.Substring(prefix.Length);
+                    var target = Path.Combine(PopplerDir, fileName);
+
+                    // 已解压且存在则跳过（避免每次启动重写）
+                    if (File.Exists(target)) continue;
+
+                    using (var s = typeof(ResourceManager).Assembly.GetManifestResourceStream(name))
+                    {
+                        if (s == null) continue;
+                        using (var fsOut = File.Create(target))
+                            s.CopyTo(fsOut);
+                    }
+                }
+                Log.Info($"poppler 解压完成: {PopplerDir} ({Directory.GetFiles(PopplerDir).Length} 个文件)");
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("poppler 解压失败: " + ex.Message);
+            }
         }
 
         /// <summary>以管理员权限重新启动自己；若用户拒绝 UAC 返回 false。</summary>

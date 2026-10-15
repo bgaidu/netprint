@@ -28,15 +28,15 @@
   <ItemGroup>
     <!-- 允许在没有安装 .NET Framework SDK 的机器上用 dotnet 编译 net48 -->
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
-    <PackageReference Include="System.Text.Json" Version="8.0.5" />
   </ItemGroup>
 
+  <!-- 单文件发布: 全部资源嵌入 exe，启动时按需解压 -->
   <ItemGroup>
-    <Content Include="wwwroot\**\*" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="logo.ico" CopyToOutputDirectory="PreserveNewest" />
-    <!-- poppler 只输出一份: 源码在 tools/poppler_bin, 输出映射到根目录 poppler_bin/ (代码按此路径查找) -->
-    <Content Include="tools\poppler_bin\**\*"
-             Link="poppler_bin\%(RecursiveDir)%(Filename)%(Extension)"
-             CopyToOutputDirectory="PreserveNewest" />
+    <EmbeddedResource Include="wwwroot\**\*"
+                      LogicalName="res.wwwroot.%(RecursiveDir)%(Filename)%(Extension)" />
+    <EmbeddedResource Include="logo.ico"
+                      LogicalName="res.logo.ico" />
+    <EmbeddedResource Include="tools\poppler_bin\**\*"
+                      LogicalName="res.poppler_bin.%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>

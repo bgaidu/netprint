@@ -9,6 +9,27 @@ namespace PrintServer
     /// <summary>关于对话框：显示软件信息与作者。</summary>
     internal sealed class AboutDialog : Form
     {
+        /// <summary>加载 logo 位图：优先嵌入资源（单文件），回退磁盘文件。</summary>
+        private static Bitmap LoadLogoBitmap()
+        {
+            var bytes = ResourceManager.ReadBytes("logo.ico");
+            if (bytes != null)
+            {
+                using (var ms = new MemoryStream(bytes))
+                using (var icon = new Icon(ms))
+                    return icon.ToBitmap();
+            }
+            // 磁盘回退
+            var disk = Path.Combine(Program.BaseDir, "logo.ico");
+            if (File.Exists(disk))
+            {
+                using (var icon = new Icon(disk))
+                    return icon.ToBitmap();
+            }
+            using (var fallback = System.Drawing.SystemIcons.Application)
+                return fallback.ToBitmap();
+        }
+
         public AboutDialog()
         {
             // 窗口设置
@@ -21,7 +42,7 @@ namespace PrintServer
             ClientSize = new Size(420, 300);
             BackColor = Color.White;
 
-            // 图标（左上角，加载 logo.ico）
+            // 图标（左上角，加载 logo.ico — 优先嵌入资源，回退磁盘）
             var iconBox = new PictureBox
             {
                 Size = new Size(64, 64),
@@ -30,8 +51,7 @@ namespace PrintServer
             };
             try
             {
-                using (var icon = new Icon(Path.Combine(Program.BaseDir, "logo.ico")))
-                    iconBox.Image = icon.ToBitmap();
+                iconBox.Image = LoadLogoBitmap();
             }
             catch { try { iconBox.Image = Icon.ToBitmap(); } catch { } }
             Controls.Add(iconBox);

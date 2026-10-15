@@ -158,7 +158,11 @@ namespace PrintServer
                     return;
                 }
 
-                // 其余全部返回首页（SPA 风格单页，含预览/下载等由前端调用 API）
+                // 其余全部返回首页（SPA 风格单页）
+                // 单文件部署: 从嵌入资源读取
+                if (TryServeEmbedded(ctx, "wwwroot/index.html", "text/html; charset=utf-8"))
+                    return;
+                // 磁盘模式（开发）: 读文件
                 ServeFile(ctx, GoHome());
             }
             catch (Exception ex)
@@ -170,7 +174,9 @@ namespace PrintServer
 
         private static string GoHome()
         {
-            // 首页优先从 wwwroot 目录加载，找不到则回退到 exe 同级
+            // 优先从嵌入资源读取首页（单文件部署），回退磁盘 wwwroot（开发调试）
+            if (ResourceManager.Exists("wwwroot/index.html"))
+                return null; // 由 Handle 分支走 ServeEmbedded
             var www = Path.Combine(Program.BaseDir, "wwwroot");
             var candidates = new[]
             {
@@ -180,6 +186,19 @@ namespace PrintServer
             foreach (var c in candidates)
                 if (File.Exists(c)) return c;
             return null;
+        }
+
+        /// <summary>从嵌入资源响应（单文件部署时前端不走磁盘）。返回 true 表示已响应。</summary>
+        internal static bool TryServeEmbedded(HttpListenerContext ctx, string resourceKey, string contentType)
+        {
+            var data = ResourceManager.ReadBytes(resourceKey);
+            if (data == null) return false;
+            ctx.Response.StatusCode = 200;
+            ctx.Response.ContentType = contentType;
+            ctx.Response.ContentLength64 = data.Length;
+            ctx.Response.OutputStream.Write(data, 0, data.Length);
+            ctx.Response.OutputStream.Close();
+            return true;
         }
 
         internal static void ServeFile(HttpListenerContext ctx, string filePath, string contentType = null)
@@ -205,16 +224,19 @@ namespace PrintServer
                 WriteError(ctx, 403, "Forbidden");
                 return;
             }
+
+            // 单文件部署: 从嵌入资源读取 (wwwroot/<relative>)
+            if (TryServeEmbedded(ctx, "wwwroot/" + relative, MimeFor(relative)))
+                return;
+
+            // 磁盘模式（开发）: wwwroot 目录
             var www = Path.Combine(Program.BaseDir, "wwwroot");
             var full = Path.GetFullPath(Path.Combine(www, relative));
-
-            // 只允许 wwwroot 内部
             if (!full.StartsWith(Path.GetFullPath(www) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
             {
                 WriteError(ctx, 403, "Forbidden");
                 return;
             }
-
             ServeFile(ctx, full);
         }
 

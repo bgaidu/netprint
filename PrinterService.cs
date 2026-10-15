@@ -339,10 +339,13 @@ namespace PrintServer
             }
         }
 
-        /// <summary>查找 pdftoppm.exe：优先 exe 同目录 poppler_bin/，其次系统 PATH。</summary>
+        /// <summary>查找 pdftoppm.exe：优先 Program.PopplerDir（单文件解压目录），其次系统 PATH。</summary>
         private static string FindPdftoppm()
         {
             var candidates = new List<string>();
+            // 单文件/开发模式: Program.PopplerDir
+            if (!string.IsNullOrEmpty(Program.PopplerDir))
+                candidates.Add(Path.Combine(Program.PopplerDir, "pdftoppm.exe"));
             // exe 同目录
             candidates.Add(Path.Combine(Program.BaseDir, "poppler_bin", "pdftoppm.exe"));
             candidates.Add(Path.Combine(Program.BaseDir, "pdftoppm.exe"));

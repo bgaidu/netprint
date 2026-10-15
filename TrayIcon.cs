@@ -88,6 +88,17 @@ namespace PrintServer
 
         private Icon LoadIcon()
         {
+            // 单文件部署: 优先从嵌入资源加载 logo.ico
+            var bytes = ResourceManager.ReadBytes("logo.ico");
+            if (bytes != null)
+            {
+                try
+                {
+                    using (var ms = new MemoryStream(bytes))
+                        return new Icon(ms);
+                }
+                catch { }
+            }
             try
             {
                 return new Icon(Path.Combine(Program.BaseDir, "logo.ico"));
