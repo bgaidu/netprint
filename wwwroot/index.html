@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>内网打印及扫描服务</title>
+<link rel="stylesheet" href="/static/bootstrap.min.css">
+<style>
+  body { background: #f5f7fa; }
+  .navbar-brand { font-weight: 600; }
+  .upload-zone {
+    border: 2px dashed #adb5bd; border-radius: 8px; padding: 40px 20px;
+    text-align: center; color: #6c757d; cursor: pointer; transition: all .2s;
+  }
+  .upload-zone.dragover { border-color: #0d6efd; background: #e7f1ff; }
+  .card { margin-bottom: 20px; }
+  #fileList .list-group-item { display: flex; align-items: center; gap: 10px; }
+  .thumb { width: 40px; height: 40px; object-fit: cover; border-radius: 4px; background:#eee; }
+</style>
+</head>
+<body>
+<nav class="navbar navbar-dark bg-primary">
+  <div class="container">
+    <span class="navbar-brand">🖨 内网打印及扫描服务</span>
+    <span class="text-white-50" id="serverInfo"></span>
+  </div>
+</nav>
+
+<div class="container py-4">
+  <ul class="nav nav-tabs mb-3" id="mainTabs" role="tablist">
+    <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tabPrint" role="tab">打印</a></li>
+    <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabScan" role="tab">扫描</a></li>
+    <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabFiles" role="tab">文件管理</a></li>
+  </ul>
+
+  <!-- ===== 打印 ===== -->
+  <div class="tab-content">
+    <div class="tab-pane fade show active" id="tabPrint" role="tabpanel">
+      <div class="card">
+        <div class="card-header">打印设置</div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label">选择打印机</label>
+              <select class="form-select" id="printerSelect"><option>加载中...</option></select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">份数</label>
+              <input class="form-control" type="number" id="copies" value="1" min="1" max="99">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">双面</label>
+              <select class="form-select" id="duplex">
+                <option value="1">单面</option>
+                <option value="2">双面(长边)</option>
+                <option value="3">双面(短边)</option>
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">纸张</label>
+              <select class="form-select" id="papersize">
+                <option value="9">A4</option>
+                <option value="8">A3</option>
+                <option value="11">A5</option>
+                <option value="1">Letter</option>
+                <option value="5">Legal</option>
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">质量</label>
+              <select class="form-select" id="quality">
+                <option value="600x600">600 DPI</option>
+                <option value="300x300" selected>300 DPI</option>
+                <option value="150x150">150 DPI</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="mt-3" id="dropZone" class="upload-zone">
+            <p class="mb-1">📄 点击选择文件 或 拖拽文件到此处</p>
+            <p class="mb-0 text-muted small">支持 JPG/PNG/PDF/Word/Excel/PPT/TXT</p>
+            <input type="file" id="fileInput" multiple hidden>
+          </div>
+
+          <div class="mt-2">
+            <ul class="list-group" id="pendingFiles"></ul>
+          </div>
+
+          <div class="mt-3 d-flex gap-2">
+            <button class="btn btn-primary" id="btnPrint">🖨 提交打印</button>
+            <button class="btn btn-outline-secondary" id="btnClearSel">清空选择</button>
+            <div class="ms-auto text-muted small" id="printStatus"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 扫描 ===== -->
+    <div class="tab-pane fade" id="tabScan" role="tabpanel">
+      <div class="card">
+        <div class="card-header">扫描设置</div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label">选择扫描仪</label>
+              <select class="form-select" id="scannerSelect"><option>加载中...</option></select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">格式</label>
+              <select class="form-select" id="scanFormat">
+                <option value="png">PNG (推荐)</option>
+                <option value="jpg">JPEG</option>
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">分辨率</label>
+              <select class="form-select" id="scanDpi">
+                <option value="300" selected>300 DPI</option>
+                <option value="600">600 DPI</option>
+                <option value="150">150 DPI</option>
+              </select>
+            </div>
+          </div>
+          <div class="mt-3 d-flex gap-2">
+            <button class="btn btn-primary" id="btnScan">📷 开始扫描</button>
+            <div class="ms-auto text-muted small" id="scanStatus"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 文件管理 ===== -->
+    <div class="tab-pane fade" id="tabFiles" role="tabpanel">
+      <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span>文件队列（上传 10 分钟 / 扫描 30 分钟自动清理）</span>
+          <button class="btn btn-sm btn-outline-danger" id="btnClearAll">清空全部</button>
+        </div>
+        <div class="card-body">
+          <h6 class="text-muted">已上传文件</h6>
+          <ul class="list-group mb-3" id="uploadFiles"></ul>
+          <h6 class="text-muted">已扫描文件</h6>
+          <ul class="list-group" id="scannedFiles"></ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/static/bootstrap.bundle.min.js"></script>
+<script>
+// ===== 状态 =====
+let pending = []; // {name, data(base64)}
+let printers = [], scanners = [];
+
+// ===== 初始化 =====
+async function init() {
+  try {
+    const h = await fetch('/api/health').then(r => r.json());
+    document.getElementById('serverInfo').textContent = `端口 ${h.port}`;
+  } catch (e) {}
+  loadPrinters();
+  loadScanners();
+  refreshFileList();
+  setInterval(refreshFileList, 30000);
+}
+
+async function loadPrinters() {
+  try {
+    printers = await fetch('/api/printers').then(r => r.json());
+    const sel = document.getElementById('printerSelect');
+    sel.innerHTML = '';
+    printers.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.name;
+      opt.textContent = p.name + (p.is_default ? ' (默认)' : '');
+      sel.appendChild(opt);
+    });
+    if (!printers.length) sel.innerHTML = '<option>未检测到可用打印机</option>';
+  } catch (e) {
+    document.getElementById('printerSelect').innerHTML = '<option>加载失败</option>';
+  }
+}
+
+async function loadScanners() {
+  try {
+    scanners = await fetch('/api/scanners').then(r => r.json());
+    const sel = document.getElementById('scannerSelect');
+    sel.innerHTML = '';
+    if (scanners.error) { sel.innerHTML = '<option>无扫描仪</option>'; return; }
+    scanners.forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s.id;
+      opt.textContent = s.name;
+      sel.appendChild(opt);
+    });
+    if (!scanners.length) sel.innerHTML = '<option>无扫描仪</option>';
+  } catch (e) {
+    document.getElementById('scannerSelect').innerHTML = '<option>加载失败</option>';
+  }
+}
+
+// ===== 文件选择/拖拽（打印） =====
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('dragover');
+  for (const f of e.dataTransfer.files) addFile(f);
+});
+fileInput.addEventListener('change', () => { for (const f of fileInput.files) addFile(f); fileInput.value = ''; });
+
+function addFile(file) {
+  if (!file || pending.length >= 20) return;
+  // 限制 50MB
+  if (file.size > 50 * 1024 * 1024) { alert('文件过大(>50MB): ' + file.name); return; }
+  pending.push({ name: file.name, data: null, file });
+  renderPending();
+}
+
+function renderPending() {
+  const ul = document.getElementById('pendingFiles');
+  ul.innerHTML = '';
+  pending.forEach((p, i) => {
+    const li = document.createElement('li');
+    li.className = 'list-group-item';
+    const span = document.createElement('span');
+    span.textContent = `🗎 ${p.name} (${(p.file.size/1024).toFixed(0)} KB)`;
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-sm btn-outline-danger ms-auto';
+    btn.textContent = '移除';
+    btn.onclick = () => { pending.splice(i, 1); renderPending(); };
+    li.appendChild(span); li.appendChild(btn);
+    ul.appendChild(li);
+  });
+  if (!pending.length) ul.innerHTML = '<li class="list-group-item text-muted">未选择文件</li>';
+}
+
+// ===== 打印提交 =====
+document.getElementById('btnPrint').onclick = async () => {
+  if (!pending.length) { alert('请先选择文件'); return; }
+  const btn = document.getElementById('btnPrint');
+  btn.disabled = true;
+  const status = document.getElementById('printStatus');
+  status.textContent = '正在上传打印...';
+
+  try {
+    const fd = new FormData();
+    fd.append('printer', document.getElementById('printerSelect').value);
+    fd.append('copies', document.getElementById('copies').value);
+    fd.append('duplex', document.getElementById('duplex').value);
+    fd.append('papersize', document.getElementById('papersize').value);
+    fd.append('quality', document.getElementById('quality').value);
+    for (const p of pending) fd.append('file', p.file, p.name);
+
+    const resp = await fetch('/api/print', { method: 'POST', body: fd });
+    const data = await resp.json();
+    if (data && data.results) {
+      const ok = data.results.filter(r => r.success).length;
+      status.textContent = `完成: ${ok}/${data.results.length} 成功`;
+      pending = [];
+      renderPending();
+      refreshFileList();
+    } else {
+      status.textContent = '失败: ' + (data.error || '未知错误');
+    }
+  } catch (e) {
+    status.textContent = '请求失败: ' + e.message;
+  }
+  btn.disabled = false;
+};
+
+document.getElementById('btnClearSel').onclick = () => { pending = []; renderPending(); };
+
+// ===== 扫描 =====
+document.getElementById('btnScan').onclick = async () => {
+  const btn = document.getElementById('btnScan');
+  btn.disabled = true;
+  const status = document.getElementById('scanStatus');
+  status.textContent = '扫描进行中，请稍候...';
+  try {
+    const body = JSON.stringify({
+      scannerId: document.getElementById('scannerSelect').value,
+      format: document.getElementById('scanFormat').value,
+      dpi: parseInt(document.getElementById('scanDpi').value)
+    });
+    const resp = await fetch('/api/scan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body
+    });
+    const data = await resp.json();
+    if (data.success) {
+      status.textContent = `扫描完成: ${data.file}`;
+      refreshFileList();
+    } else {
+      status.textContent = '扫描失败: ' + (data.error || '未知错误');
+    }
+  } catch (e) {
+    status.textContent = '请求失败: ' + e.message;
+  }
+  btn.disabled = false;
+};
+
+// ===== 文件管理 =====
+async function refreshFileList() {
+  try {
+    const up = await fetch('/api/files').then(r => r.json());
+    const ul1 = document.getElementById('uploadFiles');
+    ul1.innerHTML = '';
+    up.forEach(f => {
+      const li = document.createElement('li');
+      li.className = 'list-group-item d-flex align-items-center gap-2';
+      li.innerHTML = `<span>🗎 ${f.name} <small class="text-muted">${(f.size/1024).toFixed(1)}KB</small></span>
+        <span class="ms-auto">
+          <a class="btn btn-sm btn-outline-primary" href="/preview/${encodeURIComponent(f.name)}" target="_blank">预览</a>
+          <a class="btn btn-sm btn-outline-secondary" href="/uploads/${encodeURIComponent(f.name)}" download>下载</a>
+          <button class="btn btn-sm btn-outline-danger" onclick="delFile('${encodeURIComponent(f.name)}')">删除</button>
+        </span>`;
+      ul1.appendChild(li);
+    });
+    if (!up.length) ul1.innerHTML = '<li class="list-group-item text-muted">暂无上传文件</li>';
+
+    const sc = await fetch('/api/scanned').then(r => r.json());
+    const ul2 = document.getElementById('scannedFiles');
+    ul2.innerHTML = '';
+    sc.forEach(f => {
+      const li = document.createElement('li');
+      li.className = 'list-group-item d-flex align-items-center gap-2';
+      li.innerHTML = `<span>🖼 ${f.name} <small class="text-muted">${(f.size/1024).toFixed(1)}KB</small></span>
+        <span class="ms-auto">
+          <button class="btn btn-sm btn-outline-success" onclick="reprintScanned('${encodeURIComponent(f.name)}')">🖨 打印</button>
+          <a class="btn btn-sm btn-outline-primary" href="/api/scanned/${encodeURIComponent(f.name)}" target="_blank">查看</a>
+          <a class="btn btn-sm btn-outline-secondary" href="/api/scanned/${encodeURIComponent(f.name)}" download>下载</a>
+          <button class="btn btn-sm btn-outline-danger" onclick="delScanned('${encodeURIComponent(f.name)}')">删除</button>
+        </span>`;
+      ul2.appendChild(li);
+    });
+    if (!sc.length) ul2.innerHTML = '<li class="list-group-item text-muted">暂无扫描文件</li>';
+  } catch (e) {}
+}
+
+// 扫描文件重新打印：用当前选中的打印机
+async function reprintScanned(encodedName) {
+  const name = decodeURIComponent(encodedName);
+  const printer = document.getElementById('printerSelect').value;
+  if (!printer || printer === '未检测到可用打印机') { alert('请先在打印页选择打印机'); return; }
+  const copies = Math.min(99, Math.max(1, parseInt(document.getElementById('copies').value) || 1));
+  const duplex = parseInt(document.getElementById('duplex').value) || 1;
+  if (!confirm(`用打印机 [${printer}] 重新打印 ${name} (${copies}份)?`)) return;
+
+  try {
+    const resp = await fetch(`/api/scanned/${encodedName}/print`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ printer, copies, duplex })
+    });
+    const data = await resp.json();
+    alert(data.success ? '✅ 打印任务已发送' : ('❌ 打印失败: ' + (data.message || data.error || '未知错误')));
+  } catch (e) {
+    alert('请求失败: ' + e.message);
+  }
+}
+
+async function delFile(name) {
+  await fetch('/api/files/' + name, { method: 'DELETE' });
+  refreshFileList();
+}
+async function delScanned(name) {
+  await fetch('/api/scanned/' + name, { method: 'DELETE' });
+  refreshFileList();
+}
+document.getElementById('btnClearAll').onclick = async () => {
+  if (!confirm('确定清空所有文件？')) return;
+  await fetch('/api/files/clear', { method: 'POST' });
+  await fetch('/api/scanned/clear', { method: 'POST' });
+  refreshFileList();
+};
+
+init();
+</script>
+</body>
+</html>

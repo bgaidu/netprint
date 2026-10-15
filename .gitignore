@@ -1,0 +1,20 @@
+# 构建产物
+bin/
+obj/
+*.user
+*.suo
+
+# 运行时数据
+data/
+
+# 本地运行输出
+run_out.txt
+run_err.txt
+
+# IDE
+.vs/
+.vscode/
+
+# 系统
+Thumbs.db
+.DS_Store
