@@ -70,7 +70,7 @@ namespace PrintServer
             // 版本
             var lblVersion = new Label
             {
-                Text = "C# 原生版 v1.0  (.NET Framework 4.8)",
+                Text = "C# 原生版 v0.0.0.2  (.NET Framework 4.8)",
                 Font = new Font("微软雅黑", 9F),
                 Location = new Point(110, 62),
                 AutoSize = true,
