@@ -46,6 +46,7 @@ namespace PrintServer
             m.Items.Add("开机自启：" + (AutoStart.IsEnabled() ? "已开启" : "未开启"), null, OnToggleAutostart);
             m.Items.Add("更改端口...", null, OnChangePort);
             m.Items.Add(new ToolStripSeparator());
+            m.Items.Add("关于", null, OnAbout);
             m.Items.Add("退出", null, OnExit);
             return m;
         }
@@ -208,6 +209,22 @@ namespace PrintServer
         private void OnExit(object sender, EventArgs e)
         {
             Application.Exit();
+        }
+
+        private void OnAbout(object sender, EventArgs e)
+        {
+            try
+            {
+                using (var dlg = new AboutDialog())
+                {
+                    dlg.ShowDialog();
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("打开关于窗口失败: " + ex.Message, "打印服务",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         public void Dispose()
