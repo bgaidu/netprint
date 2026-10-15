@@ -143,6 +143,26 @@ namespace PrintServer
             try
             {
                 var path = ctx.Request.Url.AbsolutePath;
+                var ip = GetClientIp(ctx);
+
+                // 密码校验（静态资源/健康检查除外；启用密码时未带正确密码的 API 请求拒绝）
+                if (Settings.PasswordEnabled && !IsPublicResource(path))
+                {
+                    var pwd = ctx.Request.Headers["X-Auth-Password"] ?? "";
+                    if (pwd != Settings.WebPassword)
+                    {
+                        Log.Warn($"访问被拒绝(密码错误): IP={ip} {ctx.Request.HttpMethod} {path}");
+                        WebServer.WriteError(ctx, 401, "需要有效密码");
+                        return;
+                    }
+                }
+
+                // 访问日志: 记录 IP + 操作内容（仅记录有意义的事件，避免静态资源刷屏）
+                if (path.StartsWith("/api/", StringComparison.OrdinalIgnoreCase) ||
+                    path == "/" || path == "" || path == "/preview/" || path.StartsWith("/uploads/"))
+                {
+                    Log.Info($"访问: IP={ip} {ctx.Request.HttpMethod} {path}");
+                }
 
                 if (path.StartsWith("/api/", StringComparison.OrdinalIgnoreCase) ||
                     path.StartsWith("/uploads/", StringComparison.OrdinalIgnoreCase) ||
@@ -170,6 +190,27 @@ namespace PrintServer
                 Log.Error("请求处理异常: " + ex.Message);
                 try { WriteError(ctx, 500, ex.Message); } catch { }
             }
+        }
+
+        /// <summary>获取客户端 IP（HttpListener 的 RemoteEndPoint）。</summary>
+        private static string GetClientIp(HttpListenerContext ctx)
+        {
+            try
+            {
+                var ep = ctx.Request.RemoteEndPoint;
+                return ep?.Address?.ToString() ?? "?";
+            }
+            catch { return "?"; }
+        }
+
+        /// <summary>无需密码即可访问的资源（登录页/静态资源/健康检查）。</summary>
+        private static bool IsPublicResource(string path)
+        {
+            if (path == "/" || string.IsNullOrEmpty(path)) return true;      // 首页登录页
+            if (path.StartsWith("/static/", StringComparison.OrdinalIgnoreCase)) return true;
+            if (path.Equals("/api/health", StringComparison.OrdinalIgnoreCase)) return true;
+            if (path.Equals("/api/auth/check", StringComparison.OrdinalIgnoreCase)) return true;
+            return false;
         }
 
         private static string GoHome()

@@ -1,12 +1,36 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 
 namespace PrintServer
 {
-    /// <summary>简单日志：追加写入文件，控制台同步输出。</summary>
+    /// <summary>
+    /// 简单日志：按天生成日志文件（print_log_yyyyMMdd.txt），控制台同步输出。
+    /// 记录所有访问/打印/扫描/设置事件。
+    /// </summary>
     internal static class Log
     {
         private static readonly object Sync = new object();
+        private static string _currentDate;
+        private static string _currentFile;
+
+        /// <summary>获取当前日志文件路径（按天切换）。</summary>
+        public static string CurrentFile
+        {
+            get
+            {
+                lock (Sync)
+                {
+                    var date = DateTime.Now.ToString("yyyyMMdd");
+                    if (date != _currentDate || _currentFile == null)
+                    {
+                        _currentDate = date;
+                        _currentFile = Path.Combine(Program.LogDir, $"print_log_{date}.txt");
+                    }
+                    return _currentFile;
+                }
+            }
+        }
 
         public static void Info(string msg) => Write("INFO", msg);
         public static void Warn(string msg) => Write("WARN", msg);
@@ -20,7 +44,7 @@ namespace PrintServer
             {
                 try
                 {
-                    using (var w = File.AppendText(Program.LogFile))
+                    using (var w = File.AppendText(CurrentFile))
                         w.WriteLine(line);
                 }
                 catch { /* 日志失败不影响主流程 */ }
@@ -28,8 +52,7 @@ namespace PrintServer
         }
 
         /// <summary>
-        /// 自动清理：删除 keepDays 天前的日志行（每天调用一次，防止日志文件过大）。
-        /// 采用重写方式：读取所有行，仅保留最近 keepDays 天的记录。
+        /// 清理 keepDays 天前的日志文件（按天文件，直接删除旧文件）。
         /// </summary>
         public static void CleanupOld(int keepDays)
         {
@@ -37,33 +60,48 @@ namespace PrintServer
             {
                 try
                 {
-                    if (!File.Exists(Program.LogFile)) return;
-                    var now = DateTime.Now;
-                    var keep = now.AddDays(-keepDays);
-                    var all = File.ReadAllLines(Program.LogFile);
-                    var kept = new System.Collections.Generic.List<string>(all.Length);
-                    foreach (var line in all)
+                    if (!Directory.Exists(Program.LogDir)) return;
+                    var keep = DateTime.Now.AddDays(-keepDays);
+                    foreach (var f in Directory.GetFiles(Program.LogDir, "print_log_*.txt"))
                     {
-                        // 行首格式: [yyyy-MM-dd HH:mm:ss]
-                        if (line.Length >= 20 && line[0] == '[')
+                        try
                         {
+                            var name = Path.GetFileNameWithoutExtension(f); // print_log_20261015
+                            var dateStr = name.Length >= 18 ? name.Substring(10, 8) : "";
                             DateTime dt;
-                            if (DateTime.TryParse(line.Substring(1, 19), out dt))
+                            if (dateStr.Length == 8 && DateTime.TryParseExact(dateStr, "yyyyMMdd",
+                                System.Globalization.CultureInfo.InvariantCulture,
+                                System.Globalization.DateTimeStyles.None, out dt))
                             {
-                                if (dt >= keep) kept.Add(line);
-                                continue;
+                                if (dt < keep)
+                                {
+                                    File.Delete(f);
+                                    Log.Info($"日志清理: 删除旧日志 {Path.GetFileName(f)}");
+                                }
                             }
                         }
-                        kept.Add(line); // 无法解析的保留
-                    }
-                    if (kept.Count < all.Length)
-                    {
-                        File.WriteAllLines(Program.LogFile, kept);
-                        Log.Info($"日志自动清理: 移除 {all.Length - kept.Count} 条 {keepDays} 天前的记录");
+                        catch { }
                     }
                 }
                 catch { /* 清理失败不影响 */ }
             }
+        }
+
+        /// <summary>返回日志目录下所有日志文件名列表（用于托盘查看，最新在前）。</summary>
+        public static List<string> ListLogFiles()
+        {
+            var list = new List<string>();
+            try
+            {
+                if (Directory.Exists(Program.LogDir))
+                {
+                    foreach (var f in Directory.GetFiles(Program.LogDir, "print_log_*.txt"))
+                        list.Add(Path.GetFileName(f));
+                }
+            }
+            catch { }
+            list.Sort((a, b) => string.Compare(b, a, StringComparison.Ordinal)); // 最新在前
+            return list;
         }
     }
 }

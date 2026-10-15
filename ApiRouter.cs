@@ -16,6 +16,17 @@ namespace PrintServer
 
             try
             {
+                // ===== 密码认证接口 =====
+                if (path == "/api/auth/check" && method == "GET")
+                {
+                    // 前端登录时检查密码是否正确（payload: password）
+                    var pwd = ctx.Request.Headers["X-Auth-Password"] ?? "";
+                    var ok = !Settings.PasswordEnabled || pwd == Settings.WebPassword;
+                    WebServer.WriteJson(ctx, 200,
+                        "{\"enabled\":" + (Settings.PasswordEnabled ? "true" : "false") + ",\"ok\":" + (ok ? "true" : "false") + "}");
+                    return;
+                }
+
                 // ===== 健康检查 =====
                 if (path == "/api/health")
                 {
@@ -91,7 +102,13 @@ namespace PrintServer
                 if (path == "/api/scan" && method == "POST")
                 {
                     var body = ReadBody(ctx, 512 * 1024);
-                    WebServer.WriteJson(ctx, 200, ScannerService.ScanJson(body));
+                    var result = ScannerService.ScanJson(body);
+                    // 内容日志: IP + 扫描仪 + 格式 + 结果
+                    var fields = SimpleJson.Parse(body);
+                    var ok = result != null && result.Contains("\"success\":true");
+                    Log.Info($"扫描: IP={GetClientIpSafe(ctx)} 扫描仪={fields.Get("scannerId")} " +
+                             $"格式={fields.Get("format")} DPI={fields.GetInt("dpi", 300)} 结果={(ok ? "成功" : "失败")}");
+                    WebServer.WriteJson(ctx, 200, result);
                     return;
                 }
                 if (path == "/api/scanned" && method == "GET")
@@ -159,6 +176,7 @@ namespace PrintServer
 
             var results = new StringBuilder("[");
             bool first = true;
+            var clientIp = GetClientIpSafe(ctx);
             foreach (var f in files)
             {
                 if (!first) results.Append(',');
@@ -167,12 +185,16 @@ namespace PrintServer
                 {
                     var saved = FileStore.SaveUpload(f.Name, f.Data);
                     var ok = PrinterService.PrintFile(saved, printer, copies, duplex, papersize, quality);
+                    // 内容日志: IP + 文件 + 打印机 + 参数 + 结果
+                    Log.Info($"打印: IP={clientIp} 文件={f.Name} 打印机={printer} 份数={copies} " +
+                             $"双面={(duplex == 1 ? "单面" : "双面")} 纸张={papersize} 结果={(ok ? "成功" : "失败:" + PrinterService.LastError)}");
                     results.Append("{\"file\":").Append(WebServer.JsonEncode(f.Name))
                            .Append(",\"success\":").Append(ok ? "true" : "false")
                            .Append(",\"message\":").Append(WebServer.JsonEncode(PrinterService.LastError)).Append("}");
                 }
                 catch (Exception ex)
                 {
+                    Log.Error($"打印异常: IP={clientIp} 文件={f.Name} 错误={ex.Message}");
                     results.Append("{\"file\":").Append(WebServer.JsonEncode(f.Name))
                            .Append(",\"success\":false,\"message\":").Append(WebServer.JsonEncode(ex.Message)).Append("}");
                 }
@@ -215,6 +237,16 @@ namespace PrintServer
         }
 
         // ===== 请求体解析 =====
+
+        /// <summary>获取客户端 IP（日志用）。</summary>
+        private static string GetClientIpSafe(HttpListenerContext ctx)
+        {
+            try
+            {
+                return ctx.Request.RemoteEndPoint?.Address?.ToString() ?? "?";
+            }
+            catch { return "?"; }
+        }
 
         internal static string ReadBody(HttpListenerContext ctx, int maxBytes = WebServer.MaxBodyBytes)
         {

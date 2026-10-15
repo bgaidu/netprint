@@ -19,6 +19,20 @@
 </style>
 </head>
 <body>
+<!-- ===== 登录遮罩（密码启用时显示） ===== -->
+<div id="loginOverlay" class="position-fixed top-0 start-0 w-100 h-100 d-none" style="background:rgba(30,40,60,0.92);z-index:9999;align-items:center;justify-content:center;">
+  <div class="card" style="width:340px;">
+    <div class="card-body text-center p-4">
+      <div class="fs-1 mb-2">🔒</div>
+      <h5 class="mb-1">打印服务登录</h5>
+      <p class="text-muted small mb-3">请输入访问密码</p>
+      <input type="password" id="loginPwd" class="form-control mb-2" placeholder="密码" autocomplete="off">
+      <div id="loginErr" class="text-danger small mb-2" style="display:none">密码错误，请重试</div>
+      <button class="btn btn-primary w-100" id="loginBtn">进入</button>
+    </div>
+  </div>
+</div>
+
 <nav class="navbar navbar-dark bg-primary">
   <div class="container">
     <span class="navbar-brand">🖨 内网打印及扫描服务</span>
@@ -152,6 +166,59 @@
 // ===== 状态 =====
 let pending = []; // {name, data(base64)}
 let printers = [], scanners = [];
+let authPwd = localStorage.getItem('np_pwd') || '';
+
+// ===== 认证: 所有 fetch 带密码头，401 时弹登录 =====
+async function authFetch(url, options = {}) {
+  options = options || {};
+  options.headers = options.headers || {};
+  if (authPwd) options.headers['X-Auth-Password'] = authPwd;
+  const resp = await fetch(url, options);
+  if (resp.status === 401) {
+    showLogin();
+    throw new Error('需要密码');
+  }
+  return resp;
+}
+
+function showLogin() {
+  const ov = document.getElementById('loginOverlay');
+  ov.classList.remove('d-none');
+  ov.style.display = 'flex';
+  document.getElementById('loginPwd').focus();
+}
+
+function hideLogin() {
+  const ov = document.getElementById('loginOverlay');
+  ov.classList.add('d-none');
+  ov.style.display = 'none';
+  document.getElementById('loginErr').style.display = 'none';
+}
+
+document.getElementById('loginBtn').onclick = async () => {
+  const pwd = document.getElementById('loginPwd').value;
+  try {
+    const r = await fetch('/api/auth/check', { headers: { 'X-Auth-Password': pwd } }).then(r => r.json());
+    if (r.ok) {
+      authPwd = pwd;
+      localStorage.setItem('np_pwd', pwd);
+      hideLogin();
+      refreshAll();
+    } else {
+      document.getElementById('loginErr').style.display = 'block';
+    }
+  } catch (e) {
+    document.getElementById('loginErr').textContent = '连接失败';
+    document.getElementById('loginErr').style.display = 'block';
+  }
+};
+document.getElementById('loginPwd').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('loginBtn').click(); });
+
+function refreshAll() {
+  loadPrinters();
+  loadScanners();
+  refreshFileList();
+}
 
 // ===== 初始化 =====
 async function init() {
@@ -159,15 +226,18 @@ async function init() {
     const h = await fetch('/api/health').then(r => r.json());
     document.getElementById('serverInfo').textContent = `端口 ${h.port}`;
   } catch (e) {}
-  loadPrinters();
-  loadScanners();
-  refreshFileList();
+  // 检查是否需要密码
+  try {
+    const a = await fetch('/api/auth/check', { headers: authPwd ? { 'X-Auth-Password': authPwd } : {} }).then(r => r.json());
+    if (a.enabled && !a.ok) { showLogin(); return; }  // 需密码且未通过
+  } catch (e) {}
+  refreshAll();
   setInterval(refreshFileList, 30000);
 }
 
 async function loadPrinters() {
   try {
-    printers = await fetch('/api/printers').then(r => r.json());
+    printers = await authFetch('/api/printers').then(r => r.json());
     const sel = document.getElementById('printerSelect');
     sel.innerHTML = '';
     printers.forEach(p => {
@@ -184,7 +254,7 @@ async function loadPrinters() {
 
 async function loadScanners() {
   try {
-    scanners = await fetch('/api/scanners').then(r => r.json());
+    scanners = await authFetch('/api/scanners').then(r => r.json());
     const sel = document.getElementById('scannerSelect');
     sel.innerHTML = '';
     if (scanners.error) { sel.innerHTML = '<option>无扫描仪</option>'; return; }
@@ -257,7 +327,7 @@ document.getElementById('btnPrint').onclick = async () => {
     fd.append('quality', document.getElementById('quality').value);
     for (const p of pending) fd.append('file', p.file, p.name);
 
-    const resp = await fetch('/api/print', { method: 'POST', body: fd });
+    const resp = await authFetch('/api/print', { method: 'POST', body: fd });
     const data = await resp.json();
     if (data && data.results) {
       const ok = data.results.filter(r => r.success).length;
@@ -288,7 +358,7 @@ document.getElementById('btnScan').onclick = async () => {
       format: document.getElementById('scanFormat').value,
       dpi: parseInt(document.getElementById('scanDpi').value)
     });
-    const resp = await fetch('/api/scan', {
+    const resp = await authFetch('/api/scan', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body
@@ -309,7 +379,7 @@ document.getElementById('btnScan').onclick = async () => {
 // ===== 文件管理 =====
 async function refreshFileList() {
   try {
-    const up = await fetch('/api/files').then(r => r.json());
+    const up = await authFetch('/api/files').then(r => r.json());
     const ul1 = document.getElementById('uploadFiles');
     ul1.innerHTML = '';
     up.forEach(f => {
@@ -325,7 +395,7 @@ async function refreshFileList() {
     });
     if (!up.length) ul1.innerHTML = '<li class="list-group-item text-muted">暂无上传文件</li>';
 
-    const sc = await fetch('/api/scanned').then(r => r.json());
+    const sc = await authFetch('/api/scanned').then(r => r.json());
     const ul2 = document.getElementById('scannedFiles');
     ul2.innerHTML = '';
     sc.forEach(f => {
@@ -354,7 +424,7 @@ async function reprintScanned(encodedName) {
   if (!confirm(`用打印机 [${printer}] 重新打印 ${name} (${copies}份)?`)) return;
 
   try {
-    const resp = await fetch(`/api/scanned/${encodedName}/print`, {
+    const resp = await authFetch(`/api/scanned/${encodedName}/print`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ printer, copies, duplex })
@@ -367,17 +437,17 @@ async function reprintScanned(encodedName) {
 }
 
 async function delFile(name) {
-  await fetch('/api/files/' + name, { method: 'DELETE' });
+  await authFetch('/api/files/' + name, { method: 'DELETE' });
   refreshFileList();
 }
 async function delScanned(name) {
-  await fetch('/api/scanned/' + name, { method: 'DELETE' });
+  await authFetch('/api/scanned/' + name, { method: 'DELETE' });
   refreshFileList();
 }
 document.getElementById('btnClearAll').onclick = async () => {
   if (!confirm('确定清空所有文件？')) return;
-  await fetch('/api/files/clear', { method: 'POST' });
-  await fetch('/api/scanned/clear', { method: 'POST' });
+  await authFetch('/api/files/clear', { method: 'POST' });
+  await authFetch('/api/scanned/clear', { method: 'POST' });
   refreshFileList();
 };
 

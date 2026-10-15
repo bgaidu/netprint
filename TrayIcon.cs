@@ -45,10 +45,37 @@ namespace PrintServer
             m.Items.Add(new ToolStripSeparator());
             m.Items.Add("开机自启：" + (AutoStart.IsEnabled() ? "已开启" : "未开启"), null, OnToggleAutostart);
             m.Items.Add("更改端口...", null, OnChangePort);
+            m.Items.Add("网页密码：" + (Settings.PasswordEnabled ? "已启用" : "未启用"), null, OnSetPassword);
             m.Items.Add(new ToolStripSeparator());
             m.Items.Add("关于", null, OnAbout);
             m.Items.Add("退出", null, OnExit);
             return m;
+        }
+
+        /// <summary>设置/修改/关闭网页访问密码。</summary>
+        private void OnSetPassword(object sender, EventArgs e)
+        {
+            try
+            {
+                using (var dlg = new PasswordDialog())
+                {
+                    if (dlg.ShowDialog() == DialogResult.OK)
+                    {
+                        Settings.WebPassword = dlg.Password;
+                        Settings.Save();
+                        Refresh();
+                        MessageBox.Show(dlg.Password.Length == 0
+                            ? "已关闭网页密码"
+                            : "网页密码已设置，下次访问网页需要输入", "打印服务",
+                            MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("设置密码失败: " + ex.Message, "打印服务",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         private static void OnSetStaticIp(object sender, EventArgs e)

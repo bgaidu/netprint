@@ -13,7 +13,10 @@ namespace PrintServer
         public static string UploadDir { get; private set; }
         public static string ScannedDir { get; private set; }
         public static string LogDir { get; private set; }
-        public static string LogFile { get; private set; }
+
+        /// <summary>当前日志文件（按天自动切换，兼容旧引用）。</summary>
+        public static string LogFile => Log.CurrentFile;
+
         public static int Port { get; private set; } = 5000;
 
         public static WebServer Server { get; private set; }
@@ -65,11 +68,13 @@ namespace PrintServer
             UploadDir = Path.Combine(DataDir, "uploads");
             ScannedDir = Path.Combine(DataDir, "scanned");
             LogDir = Path.Combine(DataDir, "logs");
-            LogFile = Path.Combine(LogDir, "print_log.txt");
 
             Directory.CreateDirectory(UploadDir);
             Directory.CreateDirectory(ScannedDir);
             Directory.CreateDirectory(LogDir);
+
+            // 加载配置（网页密码等）
+            Settings.Load();
 
             // poppler: 单文件模式从嵌入资源解压到临时目录；开发模式直接用输出目录
             try
