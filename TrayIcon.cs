@@ -39,7 +39,7 @@ namespace PrintServer
             m.Items.Add(netMenu);
 
             m.Items.Add("打开网页", null, OnOpenHome);
-            m.Items.Add("查看日志", null, OnViewLog);
+            m.Items.Add(LogMenu());
             m.Items.Add("清理日志", null, OnCleanLogs);
             m.Items.Add("重新启动服务", null, OnRestart);
             m.Items.Add(new ToolStripSeparator());
@@ -162,9 +162,46 @@ namespace PrintServer
             try { Process.Start($"http://{GetLocalIp()}:{Program.Port}/"); } catch { }
         }
 
-        private void OnViewLog(object sender, EventArgs e)
+        /// <summary>日志子菜单：列出所有按天日志文件，点击任意一天用记事本打开。</summary>
+        private ToolStripMenuItem LogMenu()
         {
-            try { Process.Start("notepad.exe", Program.LogFile); } catch { }
+            var menu = new ToolStripMenuItem("查看日志");
+            try
+            {
+                var files = Log.ListLogFiles();
+                if (files.Count == 0)
+                {
+                    menu.DropDownItems.Add("（暂无日志）");
+                }
+                else
+                {
+                    foreach (var f in files)
+                    {
+                        // print_log_20261015.txt -> 2026-10-15
+                        var date = f.Length >= 18 ? f.Substring(10, 8) : f;
+                        var label = date.Length == 8
+                            ? $"{date.Substring(0, 4)}-{date.Substring(4, 2)}-{date.Substring(6, 2)}"
+                            : f;
+                        var fullPath = Path.Combine(Program.LogDir, f);
+                        menu.DropDownItems.Add(label, null, (s, e) => OpenLogFile(fullPath));
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                menu.DropDownItems.Add("读取失败: " + ex.Message);
+            }
+            return menu;
+        }
+
+        private static void OpenLogFile(string fullPath)
+        {
+            try { Process.Start("notepad.exe", fullPath); }
+            catch (Exception ex)
+            {
+                MessageBox.Show("打开日志失败: " + ex.Message, "打印服务",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         private void OnCleanLogs(object sender, EventArgs e)

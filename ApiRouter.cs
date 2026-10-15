@@ -146,6 +146,36 @@ namespace PrintServer
                     return;
                 }
 
+                // ===== 日志管理 =====
+                if (path == "/api/logs" && method == "GET")
+                {
+                    // 日志文件列表: [{name, date}]
+                    var files = Log.ListLogFiles();
+                    var sb = new System.Text.StringBuilder("[");
+                    for (int i = 0; i < files.Count; i++)
+                    {
+                        var fname = files[i];
+                        var date = fname.Length >= 18 ? fname.Substring(10, 8) : "";
+                        if (i > 0) sb.Append(',');
+                        sb.Append("{\"name\":").Append(WebServer.JsonEncode(fname))
+                          .Append(",\"date\":").Append(WebServer.JsonEncode(date)).Append('}');
+                    }
+                    sb.Append(']');
+                    WebServer.WriteJson(ctx, 200, sb.ToString());
+                    return;
+                }
+                if (path.StartsWith("/api/logs/") && method == "GET")
+                {
+                    // 读取某天日志: /api/logs/20261015
+                    var date = path.Substring("/api/logs/".Length).Trim();
+                    var content = Log.ReadDay(date);
+                    if (content == null) { WebServer.WriteError(ctx, 404, "日志不存在"); return; }
+                    // 转成 HTML 安全文本 + 换行
+                    var escaped = WebServer.JsonEncode(content);
+                    WebServer.WriteJson(ctx, 200, "{\"date\":" + WebServer.JsonEncode(date) + ",\"content\":" + escaped + "}");
+                    return;
+                }
+
                 WebServer.WriteError(ctx, 404, "接口不存在: " + path);
             }
             catch (Exception ex)

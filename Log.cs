@@ -103,5 +103,17 @@ namespace PrintServer
             list.Sort((a, b) => string.Compare(b, a, StringComparison.Ordinal)); // 最新在前
             return list;
         }
+
+        /// <summary>读取指定日期的日志内容（dateStr 形如 20261015）。不存在或非法返回 null。</summary>
+        public static string ReadDay(string dateStr)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(dateStr) || dateStr.Length != 8) return null;
+                var file = Path.Combine(Program.LogDir, $"print_log_{dateStr}.txt");
+                return File.Exists(file) ? File.ReadAllText(file, System.Text.Encoding.UTF8) : null;
+            }
+            catch { return null; }
+        }
     }
 }

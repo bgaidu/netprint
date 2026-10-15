@@ -45,6 +45,7 @@
     <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tabPrint" role="tab">打印</a></li>
     <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabScan" role="tab">扫描</a></li>
     <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabFiles" role="tab">文件管理</a></li>
+    <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabLogs" role="tab">日志</a></li>
   </ul>
 
   <!-- ===== 打印 ===== -->
@@ -158,6 +159,24 @@
         </div>
       </div>
     </div>
+
+    <!-- ===== 日志管理 ===== -->
+    <div class="tab-pane fade" id="tabLogs" role="tabpanel">
+      <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span>日志管理（按天生成，访问/打印/扫描记录，保留 7 天）</span>
+          <div class="d-flex gap-2 align-items-center">
+            <select class="form-select form-select-sm" id="logDateSelect" style="width:150px;">
+              <option value="">加载中...</option>
+            </select>
+            <button class="btn btn-sm btn-outline-primary" id="btnRefreshLog">刷新</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <pre id="logContent" class="bg-light p-3 rounded" style="max-height:480px;overflow:auto;font-size:12px;white-space:pre-wrap;word-break:break-all;">选择日期查看日志...</pre>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -232,6 +251,7 @@ async function init() {
     if (a.enabled && !a.ok) { showLogin(); return; }  // 需密码且未通过
   } catch (e) {}
   refreshAll();
+  loadLogDates();
   setInterval(refreshFileList, 30000);
 }
 
@@ -449,6 +469,43 @@ document.getElementById('btnClearAll').onclick = async () => {
   await authFetch('/api/files/clear', { method: 'POST' });
   await authFetch('/api/scanned/clear', { method: 'POST' });
   refreshFileList();
+};
+
+// ===== 日志管理 =====
+async function loadLogDates() {
+  try {
+    const dates = await authFetch('/api/logs').then(r => r.json());
+    const sel = document.getElementById('logDateSelect');
+    sel.innerHTML = '<option value="">-- 选择日期 --</option>';
+    dates.forEach(d => {
+      const opt = document.createElement('option');
+      opt.value = d.date;
+      // 20261015 -> 2026-10-15
+      const fmt = d.date.length === 8 ? d.date.slice(0,4) + '-' + d.date.slice(4,6) + '-' + d.date.slice(6) : d.date;
+      opt.textContent = fmt;
+      sel.appendChild(opt);
+    });
+    if (dates.length && !sel.value) {
+      sel.value = dates[0].date; // 默认最新
+      loadLogContent(dates[0].date);
+    }
+  } catch (e) {}
+}
+
+async function loadLogContent(date) {
+  if (!date) { document.getElementById('logContent').textContent = '选择日期查看日志...'; return; }
+  try {
+    const data = await authFetch('/api/logs/' + date).then(r => r.json());
+    document.getElementById('logContent').textContent = data.content || '(该日无日志)';
+  } catch (e) {
+    document.getElementById('logContent').textContent = '日志读取失败(可能需要密码或文件不存在)';
+  }
+}
+
+document.getElementById('logDateSelect').onchange = () => loadLogContent(document.getElementById('logDateSelect').value);
+document.getElementById('btnRefreshLog').onclick = () => {
+  loadLogDates();
+  loadLogContent(document.getElementById('logDateSelect').value);
 };
 
 init();
