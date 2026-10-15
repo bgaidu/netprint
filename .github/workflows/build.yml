@@ -1,0 +1,49 @@
+name: Build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build net48 (x64)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Restore NuGet packages
+        run: dotnet restore PrintServer.csproj
+
+      - name: Build Release
+        run: dotnet build PrintServer.csproj -c Release --no-restore
+
+      - name: Verify output (single exe)
+        shell: pwsh
+        run: |
+          $dist = 'bin/Release/net48'
+          Write-Host "=== 输出目录内容 ==="
+          Get-ChildItem $dist | Select-Object Name, Length
+          $dllCount = (Get-ChildItem $dist -Filter *.dll).Count
+          Write-Host "DLL 数量: $dllCount (应为 0, 单文件发布)"
+          if (Test-Path "$dist/PrintServer.exe") {
+            $size = (Get-Item "$dist/PrintServer.exe").Length
+            Write-Host "PrintServer.exe ($([math]::Round($size/1MB,2)) MB) OK"
+          } else {
+            throw "PrintServer.exe 未生成!"
+          }
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PrintServer-net48-x64
+          path: bin/Release/net48/
+          if-no-files-found: error
