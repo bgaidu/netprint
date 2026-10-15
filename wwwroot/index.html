@@ -45,6 +45,7 @@
     <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tabPrint" role="tab">打印</a></li>
     <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabScan" role="tab">扫描</a></li>
     <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabFiles" role="tab">文件管理</a></li>
+    <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabQueue" role="tab">打印队列</a></li>
     <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabLogs" role="tab">日志</a></li>
   </ul>
 
@@ -106,6 +107,16 @@
             <button class="btn btn-outline-secondary" id="btnClearSel">清空选择</button>
             <div class="ms-auto text-muted small" id="printStatus"></div>
           </div>
+
+          <!-- 手机扫码访问 -->
+          <div class="mt-3 p-3 rounded bg-light d-flex align-items-center gap-3">
+            <img id="qrcodeImg" src="" alt="二维码" style="width:96px;height:96px;border:1px solid #ddd;background:#fff;padding:4px;" />
+            <div>
+              <div class="fw-bold small">📱 手机扫码快捷访问</div>
+              <div class="text-muted small">用手机相机/微信扫一扫，直接打开打印服务页面</div>
+              <div class="text-muted small" id="qrUrl"></div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -160,6 +171,35 @@
       </div>
     </div>
 
+    <!-- ===== 打印队列 ===== -->
+    <div class="tab-pane fade" id="tabQueue" role="tabpanel">
+      <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span>打印队列（实时监控 Windows 打印任务）</span>
+          <div class="d-flex gap-2 align-items-center">
+            <select class="form-select form-select-sm" id="queuePrinterSelect" style="width:200px;">
+              <option value="">加载中...</option>
+            </select>
+            <button class="btn btn-sm btn-outline-primary" id="btnRefreshQueue">刷新</button>
+            <button class="btn btn-sm btn-outline-danger" id="btnClearQueue">清空队列</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <table class="table table-sm table-hover align-middle">
+            <thead class="table-light">
+              <tr>
+                <th>ID</th><th>文档</th><th>用户</th><th>状态</th><th>页数</th><th></th>
+              </tr>
+            </thead>
+            <tbody id="queueBody">
+              <tr><td colspan="6" class="text-center text-muted">加载中...</td></tr>
+            </tbody>
+          </table>
+          <div class="text-muted small" id="queueStatus">每 5 秒自动刷新</div>
+        </div>
+      </div>
+    </div>
+
     <!-- ===== 日志管理 ===== -->
     <div class="tab-pane fade" id="tabLogs" role="tabpanel">
       <div class="card">
@@ -181,6 +221,7 @@
 </div>
 
 <script src="/static/bootstrap.bundle.min.js"></script>
+<script src="/static/qrcode.min.js"></script>
 <script>
 // ===== 状态 =====
 let pending = []; // {name, data(base64)}
@@ -548,6 +589,105 @@ async function downloadScanned(encodedName) {
     saveBlob(blob, name);
   } catch (e) { alert('下载失败: ' + e.message); }
 }
+
+
+
+function syncQueuePrinterSelect() {
+  const sel = document.getElementById('queuePrinterSelect');
+  sel.innerHTML = '';
+  printers.forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p.name;
+    opt.textContent = p.name + (p.is_default ? ' (默认)' : '');
+    sel.appendChild(opt);
+  });
+  if (printers.length) { sel.value = printers[0].name; loadQueue(); }
+  else sel.innerHTML = '<option value="">无打印机</option>';
+}
+
+// ===== 二维码 =====
+function renderQrCode() {
+  try {
+    var url = location.origin + '/';
+    document.getElementById('qrUrl').textContent = url;
+    if (typeof QRCode !== 'undefined') {
+      // 把 img 换成 div 容器，qrcodejs 渲染进 div
+      var img = document.getElementById('qrcodeImg');
+      var box = document.createElement('div');
+      box.id = 'qrcodeBox';
+      box.style.cssText = 'width:96px;height:96px;border:1px solid #ddd;background:#fff;padding:4px;';
+      img.parentNode.replaceChild(box, img);
+      new QRCode(box, { text: url, width: 88, height: 88 });
+    }
+  } catch (e) { /* 二维码非关键功能 */ }
+}
+
+// ===== 打印队列 =====
+async function loadQueue() {
+  const sel = document.getElementById('queuePrinterSelect');
+  const printer = sel.value;
+  if (!printer) { document.getElementById('queueBody').innerHTML = '<tr><td colspan="6" class="text-center text-muted">请选择打印机</td></tr>'; return; }
+  try {
+    const jobs = await authFetch('/api/queue?printer=' + encodeURIComponent(printer)).then(r => r.json());
+    const tb = document.getElementById('queueBody');
+    if (!jobs.length) {
+      tb.innerHTML = '<tr><td colspan="6" class="text-center text-muted">队列为空</td></tr>';
+    } else {
+      tb.innerHTML = jobs.map(j => '<tr>' +
+        '<td>' + j.id + '</td>' +
+        '<td>' + escapeHtml(j.document) + '</td>' +
+        '<td>' + escapeHtml(j.user) + '</td>' +
+        '<td>' + statusBadge(j.status) + '</td>' +
+        '<td>' + j.pages + '</td>' +
+        '<td><button class="btn btn-sm btn-outline-danger" onclick="cancelJob(' + j.id + ')">取消</button></td>' +
+        '</tr>').join('');
+    }
+    document.getElementById('queueStatus').textContent = '共 ' + jobs.length + ' 个任务 · 每 5 秒自动刷新';
+  } catch (e) {
+    document.getElementById('queueBody').innerHTML = '<tr><td colspan="6" class="text-center text-muted">加载失败</td></tr>';
+  }
+}
+
+function escapeHtml(s) {
+  return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function statusBadge(s) {
+  const map = { '正在打印': 'success', '排队': 'primary', '暂停': 'warning', '错误': 'danger', '已打印': 'secondary', '已取消': 'secondary' };
+  const cls = map[s] || 'secondary';
+  return '<span class="badge bg-' + cls + '">' + escapeHtml(s) + '</span>';
+}
+
+async function cancelJob(jobId) {
+  const printer = document.getElementById('queuePrinterSelect').value;
+  if (!confirm('确定取消任务 #' + jobId + ' ?')) return;
+  try {
+    const r = await authFetch('/api/queue/cancel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ printer, jobId })
+    }).then(r => r.json());
+    alert(r.message || (r.success ? '已取消' : '取消失败'));
+    loadQueue();
+  } catch (e) { alert('取消失败: ' + e.message); }
+}
+
+document.getElementById('btnRefreshQueue').onclick = () => { loadQueue(); };
+document.getElementById('btnClearQueue').onclick = async () => {
+  const printer = document.getElementById('queuePrinterSelect').value;
+  if (!printer) return;
+  if (!confirm('确定清空打印队列?')) return;
+  try {
+    const r = await authFetch('/api/queue/clear', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ printer })
+    }).then(r => r.json());
+    alert(r.message || '已清空');
+    loadQueue();
+  } catch (e) { alert('清空失败: ' + e.message); }
+};
+document.getElementById('queuePrinterSelect').onchange = () => { loadQueue(); };
+setInterval(() => { if (document.getElementById('tabQueue').classList.contains('active')) loadQueue(); }, 5000);
 
 init();
 </script>

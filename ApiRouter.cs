@@ -148,6 +148,42 @@ namespace PrintServer
                     return;
                 }
 
+                // ===== 打印队列管理 =====
+                if (path == "/api/queue" && method == "GET")
+                {
+                    // 查询打印队列: ?printer=xxx
+                    var qp = ctx.Request.QueryString["printer"];
+                    if (string.IsNullOrEmpty(qp)) qp = PrinterService.GetDefaultPrinter();
+                    WebServer.WriteJson(ctx, 200, PrintQueueService.GetQueueJson(qp));
+                    return;
+                }
+                if (path == "/api/queue/cancel" && method == "POST")
+                {
+                    // 取消任务: {"printer":"xxx","jobId":123}
+                    var body = ReadBody(ctx, 1024 * 1024);
+                    var j = SimpleJson.Parse(body);
+                    var printer = j.Get("printer");
+                    int jobId = j.GetInt("jobId", 0);
+                    var ok = PrintQueueService.CancelJob(printer, jobId);
+                    WebServer.WriteJson(ctx, 200,
+                        "{\"success\":" + (ok ? "true" : "false") + ",\"message\":\""
+                        + (ok ? "任务已取消" : "取消失败") + "\"}");
+                    Log.Info($"取消打印任务: 打印机={printer} jobId={jobId} 结果={(ok ? "成功" : "失败")}");
+                    return;
+                }
+                if (path == "/api/queue/clear" && method == "POST")
+                {
+                    // 清空队列: {"printer":"xxx"}
+                    var body = ReadBody(ctx, 1024 * 1024);
+                    var j = SimpleJson.Parse(body);
+                    var printer = j.Get("printer");
+                    var count = PrintQueueService.ClearQueue(printer);
+                    WebServer.WriteJson(ctx, 200,
+                        "{\"success\":true,\"cleared\":" + count + ",\"message\":\"已清空 " + count + " 个任务\"}");
+                    Log.Info($"清空打印队列: 打印机={printer} 清除={count}");
+                    return;
+                }
+
                 // ===== 日志管理 =====
                 if (path == "/api/logs" && method == "GET")
                 {

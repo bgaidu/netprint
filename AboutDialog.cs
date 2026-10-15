@@ -98,6 +98,22 @@ namespace PrintServer
             };
             Controls.Add(lblAuthor);
 
+            // 邮箱
+            var lblEmail = new Label
+            {
+                Text = "邮箱：bgaidu@163.com",
+                Font = new Font("微软雅黑", 9.5F),
+                Location = new Point(28, 158),
+                AutoSize = true,
+                ForeColor = Color.FromArgb(0, 102, 204),
+                Cursor = Cursors.Hand,
+            };
+            lblEmail.Click += (s, e) =>
+            {
+                try { Process.Start("mailto:bgaidu@163.com"); } catch { }
+            };
+            Controls.Add(lblEmail);
+
             // 说明
             var lblDesc = new Label
             {
