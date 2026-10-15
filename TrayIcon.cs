@@ -31,6 +31,13 @@ namespace PrintServer
             var m = new ContextMenuStrip();
             m.Items.Add($"服务地址: {GetLocalIp()}:{Program.Port}", null, OnOpenHome);
             m.Items.Add(new ToolStripSeparator());
+
+            // 网络配置子菜单（需要管理员权限执行 netsh）
+            var netMenu = new ToolStripMenuItem("网络配置（需要管理员权限）");
+            netMenu.DropDownItems.Add("设置当前IP为静态", null, OnSetStaticIp);
+            netMenu.DropDownItems.Add("启用DHCP", null, OnEnableDhcp);
+            m.Items.Add(netMenu);
+
             m.Items.Add("打开网页", null, OnOpenHome);
             m.Items.Add("查看日志", null, OnViewLog);
             m.Items.Add("清理日志", null, OnCleanLogs);
@@ -41,6 +48,34 @@ namespace PrintServer
             m.Items.Add(new ToolStripSeparator());
             m.Items.Add("退出", null, OnExit);
             return m;
+        }
+
+        private static void OnSetStaticIp(object sender, EventArgs e)
+        {
+            try
+            {
+                var r = NetworkConfig.SetCurrentIpStatic();
+                MessageBox.Show(r.Message, "网络配置",
+                    MessageBoxButtons.OK, r.Success ? MessageBoxIcon.Information : MessageBoxIcon.Error);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("操作失败: " + ex.Message, "网络配置", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private static void OnEnableDhcp(object sender, EventArgs e)
+        {
+            try
+            {
+                var r = NetworkConfig.EnableDhcp();
+                MessageBox.Show(r.Message, "网络配置",
+                    MessageBoxButtons.OK, r.Success ? MessageBoxIcon.Information : MessageBoxIcon.Error);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("操作失败: " + ex.Message, "网络配置", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         /// <summary>重建菜单并刷新图标文字（开机自启状态、端口变化后调用）。</summary>

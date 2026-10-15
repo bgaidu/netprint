@@ -43,7 +43,8 @@ namespace PrintServer
             return sb.ToString();
         }
 
-        /// <summary>执行扫描：body 为 JSON，含 scannerId、format(png/jpg)、dpi。</summary>
+        /// <summary>执行扫描：body 为 JSON，含 scannerId、format(png/jpg)、dpi。
+        /// 失败时自动释放扫描仪（重启 WIA 服务）并重试一次。</summary>
         public static string ScanJson(string body)
         {
             LastError = "";
@@ -58,9 +59,37 @@ namespace PrintServer
                 if (string.IsNullOrEmpty(id))
                     return "{\"success\":false,\"error\":\"未指定扫描仪\"}";
 
+                // 第一次尝试
+                var result = DoScan(id, format, dpi);
+                if (result != null) return result;
+
+                // 失败: 释放扫描仪（可能被前次扫描锁定），再重试一次
+                Log.Warn("扫描失败，尝试释放扫描仪后重试...");
+                LastError = "";
+                ReleaseScanner();
+                var retry = DoScan(id, format, dpi);
+                if (retry != null) return retry;
+
+                return "{\"success\":false,\"error\":" + WebServer.JsonEncode(LastError) + "}";
+            }
+            catch (Exception ex)
+            {
+                LastError = ex.Message;
+                return "{\"success\":false,\"error\":" + WebServer.JsonEncode(ex.Message) + "}";
+            }
+        }
+
+        /// <summary>实际执行扫描；成功返回 JSON，失败返回 null 并设置 LastError。</summary>
+        private static string DoScan(string id, string format, int dpi)
+        {
+            try
+            {
                 Type mgrType = Type.GetTypeFromProgID("WIA.DeviceManager");
                 if (mgrType == null)
-                    return "{\"success\":false,\"error\":\"WIA 不可用\"}";
+                {
+                    LastError = "WIA 不可用";
+                    return null;
+                }
 
                 dynamic mgr = Activator.CreateInstance(mgrType);
                 dynamic device = null;
@@ -98,7 +127,8 @@ namespace PrintServer
                         Log.Info($"扫描完成: {filename} ({dpi}dpi, {format})");
                         return "{\"success\":true,\"file\":\"" + filename + "\",\"path\":\"scanned\"}";
                     }
-                    return "{\"success\":false,\"error\":\"无法连接扫描仪\"}";
+                    LastError = "无法连接扫描仪";
+                    return null;
                 }
                 finally
                 {
@@ -109,7 +139,67 @@ namespace PrintServer
             catch (Exception ex)
             {
                 LastError = ex.Message;
-                return "{\"success\":false,\"error\":" + WebServer.JsonEncode(ex.Message) + "}";
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// 释放被锁定的扫描仪：(1) 结束占用 WIA 的进程 (2) 重启 WIA 服务 (3) 内存回收。
+        /// 与 Python 原版的"自动释放被锁定扫描仪"对应。
+        /// </summary>
+        public static void ReleaseScanner()
+        {
+            try
+            {
+                Log.Info("释放扫描仪: 清理 WIA 占用...");
+                // 1. 结束可能的扫描残留进程（Windows 扫描/照片应用等）
+                foreach (var procName in new[] { "WindowsCamera", "WindowsScan", "WiaScanner" })
+                {
+                    try
+                    {
+                        foreach (var p in System.Diagnostics.Process.GetProcessesByName(procName))
+                            try { p.Kill(); } catch { }
+                    }
+                    catch { }
+                }
+
+                // 2. 重启 WIA 服务 (stisvc)
+                try
+                {
+                    var psi = new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = "net",
+                        Arguments = "stop stisvc",
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                    };
+                    using (var p = System.Diagnostics.Process.Start(psi))
+                        if (p != null) p.WaitForExit(15000);
+                }
+                catch { }
+
+                try
+                {
+                    var psi = new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = "net",
+                        Arguments = "start stisvc",
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                    };
+                    using (var p = System.Diagnostics.Process.Start(psi))
+                        if (p != null) p.WaitForExit(15000);
+                }
+                catch { }
+
+                // 3. 强制内存回收
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+                Log.Info("扫描仪释放完成");
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("释放扫描仪异常: " + ex.Message);
             }
         }
 

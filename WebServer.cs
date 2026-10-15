@@ -31,6 +31,25 @@ namespace PrintServer
 
         public int Port => _port;
 
+        /// <summary>健康检查：listener 是否仍在监听 + 请求处理线程是否存活。</summary>
+        public bool IsHealthy
+        {
+            get
+            {
+                try
+                {
+                    if (_listener == null || !_listener.IsListening) return false;
+                    if (_thread == null || !_thread.IsAlive) return false;
+                    return true;
+                }
+                catch { return false; }
+            }
+        }
+
+        private int _requestCount;
+        /// <summary>自启动以来的请求计数（健康指标）。</summary>
+        public int RequestCount => _requestCount;
+
         public void Start()
         {
             // 1) 优先通配符 +:port（需要管理员，通吃所有 Host）
@@ -60,7 +79,7 @@ namespace PrintServer
             }
 
             _running = true;
-            _thread = new Thread(Loop) { IsBackground = true };
+            _thread = new Thread(Loop) { IsBackground = true, Name = "HttpLoop" };
             _thread.Start();
             Log.Info($"监听端口 {_port}");
         }
@@ -93,11 +112,27 @@ namespace PrintServer
                 try
                 {
                     var ctx = _listener.GetContext();
+                    Interlocked.Increment(ref _requestCount);
                     ThreadPool.QueueUserWorkItem(Handle, ctx);
+                }
+                catch (ObjectDisposedException)
+                {
+                    // 服务被主动关闭
+                    break;
+                }
+                catch (HttpListenerException ex)
+                {
+                    // 监听被拒等异常：等待 2 秒重试，避免死循环刷日志
+                    if (!_running) break;
+                    if (ex.ErrorCode == 995) // 操作已取消（关闭时）
+                        break;
+                    Log.Error("监听异常: " + ex.Message + "，2秒后重试");
+                    try { Thread.Sleep(2000); } catch { }
                 }
                 catch (Exception ex)
                 {
                     if (_running) Log.Error("监听异常: " + ex.Message);
+                    try { Thread.Sleep(2000); } catch { }
                 }
             }
         }

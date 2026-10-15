@@ -18,8 +18,11 @@ namespace PrintServer
 
         public static WebServer Server { get; private set; }
         private static TrayIcon _tray;
+        private static HealthWatchdog _watchdog;
 
-        /// <summary>重启 Web 服务（托盘菜单用）。</summary>
+        public static DateTime StartTime { get; private set; } = DateTime.Now;
+
+        /// <summary>重启 Web 服务（托盘菜单、健康看门狗用）。</summary>
         public static void RestartServer()
         {
             try { Server?.Dispose(); } catch { }
@@ -118,9 +121,14 @@ namespace PrintServer
             };
             logCleanupTimer.Start();
 
+            // 健康看门狗: 每15秒检查 Web 服务，异常自动重启（最多3次）
+            _watchdog = new HealthWatchdog();
+            _watchdog.Start();
+
             _tray = new TrayIcon();
             _tray.Show();
             Application.Run();
+            _watchdog.Dispose();
             _tray.Dispose();
         }
 
