@@ -16,7 +16,18 @@ namespace PrintServer
         /// <summary>打印互斥锁：所有打印请求全局串行，避免并发的不同打印机任务串台。</summary>
         private static readonly object PrintLock = new object();
 
-        /// <summary>枚举本机打印机（排除虚拟打印机），返回 JSON 数组字符串。</summary>
+        // ===== winspool P/Invoke（打印机状态查询）=====
+
+        [DllImport("winspool.drv", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern bool OpenPrinter(string pPrinterName, out IntPtr phPrinter, IntPtr pDefault);
+
+        [DllImport("winspool.drv", SetLastError = true)]
+        private static extern bool GetPrinter(IntPtr hPrinter, int Level, IntPtr pPrinter, int cbBuf, out int pcbNeeded);
+
+        [DllImport("winspool.drv", SetLastError = true)]
+        private static extern bool ClosePrinter(IntPtr hPrinter);
+
+        /// <summary>枚举本机打印机（排除虚拟打印机），返回 JSON 数组字符串（含状态/端口/驱动）。</summary>
         public static string EnumeratePrinters()
         {
             var sb = new StringBuilder("[");
@@ -26,12 +37,107 @@ namespace PrintServer
                 if (IsVirtualPrinter(printer)) continue;
                 if (!first) sb.Append(',');
                 first = false;
+                var status = GetPrinterInfo(printer);
                 sb.Append("{\"name\":").Append(WebServer.JsonEncode(printer))
                   .Append(",\"is_default\":").Append(GetDefaultPrinter() == printer ? "true" : "false")
+                  .Append(",\"online\":").Append(status.IsOnline ? "true" : "false")
+                  .Append(",\"status\":").Append(WebServer.JsonEncode(status.StatusText))
+                  .Append(",\"port\":").Append(WebServer.JsonEncode(status.PortName))
+                  .Append(",\"driver\":").Append(WebServer.JsonEncode(status.DriverName))
                   .Append('}');
             }
             sb.Append(']');
             return sb.ToString();
+        }
+
+        /// <summary>打印机状态信息。</summary>
+        public sealed class PrinterInfo
+        {
+            public bool IsOnline = true;
+            public string StatusText = "就绪";
+            public string PortName = "";
+            public string DriverName = "";
+        }
+
+        /// <summary>
+        /// 查询打印机状态（PRINTER_INFO_2）：Status 位标志 + pPortName + pDriverName。
+        /// 使用 StructLayout 完整结构体，由 CLR 自动布局，避免手算偏移出错。
+        /// </summary>
+        public static PrinterInfo GetPrinterInfo(string printerName)
+        {
+            var info = new PrinterInfo();
+            try
+            {
+                IntPtr hPrinter;
+                if (!OpenPrinter(printerName, out hPrinter, IntPtr.Zero)) return info;
+                try
+                {
+                    int needed;
+                    GetPrinter(hPrinter, 2, IntPtr.Zero, 0, out needed);
+                    if (needed <= 0) return info;
+                    IntPtr buf = Marshal.AllocHGlobal(needed);
+                    try
+                    {
+                        int got;
+                        if (!GetPrinter(hPrinter, 2, buf, needed, out got)) return info;
+
+                        var info2 = (PRINTER_INFO_2)Marshal.PtrToStructure(buf, typeof(PRINTER_INFO_2));
+                        info.PortName = info2.pPortName ?? "";
+                        info.DriverName = info2.pDriverName ?? "";
+                        uint status = info2.Status;
+
+                        // 状态标志 (PRINTER_STATUS_*)
+                        if (status == 0) { info.IsOnline = true; info.StatusText = "就绪"; }
+                        else
+                        {
+                            info.IsOnline = (status & 0x20 /* PRINTER_STATUS_OFFLINE */) == 0;
+                            var sb = new StringBuilder();
+                            if ((status & 0x1) != 0) sb.Append("暂停 ");
+                            if ((status & 0x2) != 0) sb.Append("错误 ");
+                            if ((status & 0x8) != 0) sb.Append("缺纸 ");
+                            if ((status & 0x10) != 0) sb.Append("忙 ");
+                            if ((status & 0x20) != 0) sb.Append("脱机 ");
+                            if ((status & 0x40) != 0) sb.Append("纸用完 ");
+                            if ((status & 0x80) != 0) sb.Append("输出被阻止 ");
+                            if ((status & 0x100) != 0) sb.Append("IO激活 ");
+                            if ((status & 0x200) != 0) sb.Append("需要人工干预 ");
+                            if ((status & 0x800) != 0) sb.Append("重启 ");
+                            if (sb.Length == 0) sb.Append($"状态码 {status} ");
+                            info.StatusText = sb.ToString().Trim();
+                        }
+                    }
+                    finally { Marshal.FreeHGlobal(buf); }
+                }
+                finally { ClosePrinter(hPrinter); }
+            }
+            catch { /* 状态查询失败保持默认 */ }
+            return info;
+        }
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        private struct PRINTER_INFO_2
+        {
+            [MarshalAs(UnmanagedType.LPWStr)] public string pServerName;
+            [MarshalAs(UnmanagedType.LPWStr)] public string pPrinterName;
+            [MarshalAs(UnmanagedType.LPWStr)] public string pShareName;
+            [MarshalAs(UnmanagedType.LPWStr)] public string pPortName;
+            [MarshalAs(UnmanagedType.LPWStr)] public string pDriverName;
+            [MarshalAs(UnmanagedType.LPWStr)] public string pComment;
+            [MarshalAs(UnmanagedType.LPWStr)] public string pLocation;
+            public IntPtr pDevMode;
+            [MarshalAs(UnmanagedType.LPWStr)] public string pSepFile;
+            [MarshalAs(UnmanagedType.LPWStr)] public string pPrintProcessor;
+            [MarshalAs(UnmanagedType.LPWStr)] public string pDatatype;
+            [MarshalAs(UnmanagedType.LPWStr)] public string pParameters;
+            public IntPtr pSecurityDescriptor;
+            public uint Attributes;
+            public uint Priority;
+            public uint DefaultPriority;
+            public uint StartTime;
+            public uint UntilTime;
+            public uint Status;
+            public uint cJobs;
+            public uint AveragePPM;
         }
 
         /// <summary>获取默认打印机名。</summary>
@@ -61,42 +167,55 @@ namespace PrintServer
         public static bool PrintFile(string path, string printer, int copies, int duplex,
             string papersize, string quality, string jobName = null)
         {
-            // 全局互斥：打印任务串行执行，防止多请求同时打印导致设备冲突/串台
-            lock (PrintLock)
+            // 设备互斥：等待扫描完成再打印（防止一体机设备冲突）
+            if (!DeviceMutex.TryEnterPrint())
             {
-                LastError = "";
-                try
+                LastError = "设备忙：扫描正在进行中，请稍后重试";
+                return false;
+            }
+            try
+            {
+                // 全局互斥：打印任务串行执行，防止多请求同时打印导致设备冲突/串台
+                lock (PrintLock)
                 {
-                    var ext = Path.GetExtension(path).ToLowerInvariant();
-
-                    if (ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".bmp" || ext == ".gif")
-                        return PrintImage(path, printer, copies, duplex, papersize, quality, jobName);
-
-                    if (ext == ".txt")
-                        return PrintText(path, printer, copies, duplex, papersize, jobName);
-
-                    // PDF: 优先 poppler 渲染成图片再 GDI 打印（不依赖 Acrobat，老旧打印机兼容好）
-                    if (ext == ".pdf")
-                        return PrintPdf(path, printer, copies, duplex, papersize, quality, jobName);
-
-                    // Office: 优先 COM 静默打印（可靠、无声无窗口），失败回退 Shell
-                    if (ext == ".doc" || ext == ".docx" || ext == ".xls" || ext == ".xlsx" ||
-                        ext == ".ppt" || ext == ".pptx")
+                    LastError = "";
+                    try
                     {
-                        if (OfficePrintHelper.TryPrint(path, printer, copies, ext))
-                            return true;
-                        Log.Warn($"COM 打印失败({OfficePrintHelper.LastError})，回退 Shell 打印: {Path.GetFileName(path)}");
-                        return PrintViaShell(path, printer, jobName);
-                    }
+                        var ext = Path.GetExtension(path).ToLowerInvariant();
 
-                    LastError = "不支持的文件类型: " + ext;
-                    return false;
+                        if (ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".bmp" || ext == ".gif")
+                            return PrintImage(path, printer, copies, duplex, papersize, quality, jobName);
+
+                        if (ext == ".txt")
+                            return PrintText(path, printer, copies, duplex, papersize, jobName);
+
+                        // PDF: 优先 poppler 渲染成图片再 GDI 打印（不依赖 Acrobat，老旧打印机兼容好）
+                        if (ext == ".pdf")
+                            return PrintPdf(path, printer, copies, duplex, papersize, quality, jobName);
+
+                        // Office: 优先 COM 静默打印（可靠、无声无窗口），失败回退 Shell
+                        if (ext == ".doc" || ext == ".docx" || ext == ".xls" || ext == ".xlsx" ||
+                            ext == ".ppt" || ext == ".pptx")
+                        {
+                            if (OfficePrintHelper.TryPrint(path, printer, copies, ext))
+                                return true;
+                            Log.Warn($"COM 打印失败({OfficePrintHelper.LastError})，回退 Shell 打印: {Path.GetFileName(path)}");
+                            return PrintViaShell(path, printer, jobName);
+                        }
+
+                        LastError = "不支持的文件类型: " + ext;
+                        return false;
+                    }
+                    catch (Exception ex)
+                    {
+                        LastError = ex.Message;
+                        return false;
+                    }
                 }
-                catch (Exception ex)
-                {
-                    LastError = ex.Message;
-                    return false;
-                }
+            }
+            finally
+            {
+                DeviceMutex.ReleasePrint();
             }
         }
 

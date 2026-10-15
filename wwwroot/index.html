@@ -305,7 +305,10 @@ async function loadPrinters() {
     printers.forEach(p => {
       const opt = document.createElement('option');
       opt.value = p.name;
-      opt.textContent = p.name + (p.is_default ? ' (默认)' : '');
+      let label = p.name + (p.is_default ? ' (默认)' : '');
+      if (p.online === false) label += ' ⛔ 离线';
+      else if (p.status && p.status !== '就绪') label += ' ⚠ ' + p.status;
+      opt.textContent = label;
       sel.appendChild(opt);
     });
     if (!printers.length) sel.innerHTML = '<option>未检测到可用打印机</option>';

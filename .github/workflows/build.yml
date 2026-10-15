@@ -21,11 +21,27 @@ jobs:
         with:
           dotnet-version: '9.0.x'
 
+      # 版本号: tag 构建用 tag 名 (v0.0.0.5 -> 0.0.0.5)；普通 push 用默认
+      - name: Resolve build version
+        id: ver
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          if ($tag -match '^v(\d+\.\d+\.\d+(\.\d+)?)$') {
+            $v = $Matches[1]
+            Write-Host "Tag 构建版本: $v"
+            echo "version=$v" >> $env:GITHUB_OUTPUT
+          } else {
+            echo "version=0.0.0.0-ci" >> $env:GITHUB_OUTPUT
+          }
+
       - name: Restore NuGet packages
         run: dotnet restore PrintServer.csproj
 
       - name: Build Release
         run: dotnet build PrintServer.csproj -c Release --no-restore
+        env:
+          BUILD_VERSION: ${{ steps.ver.outputs.version }}
 
       - name: Verify output (single exe)
         shell: pwsh

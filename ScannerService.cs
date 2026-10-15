@@ -48,6 +48,11 @@ namespace PrintServer
         public static string ScanJson(string body)
         {
             LastError = "";
+            // 设备互斥：等待打印完成再扫描（防止一体机设备冲突）
+            if (!DeviceMutex.TryEnterScan())
+            {
+                return "{\"success\":false,\"error\":\"设备忙：正在打印中，请稍后重试\"}";
+            }
             try
             {
                 // 解析简单 JSON: {"scannerId":"1","format":"png","dpi":300}
@@ -84,6 +89,10 @@ namespace PrintServer
             {
                 LastError = ex.Message;
                 return "{\"success\":false,\"error\":" + WebServer.JsonEncode(ex.Message) + "}";
+            }
+            finally
+            {
+                DeviceMutex.ReleaseScan();
             }
         }
 

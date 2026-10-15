@@ -121,6 +121,20 @@ namespace PrintServer
                 return;
             }
 
+            // 非管理员运行提醒（重要提示，避免用户不知情）
+            if (!IsAdministrator())
+            {
+                Log.Warn("当前以非管理员权限运行：仅本机 localhost 可访问，局域网其他设备将无法连入！");
+                MessageBox.Show(
+                    "当前不是以管理员身份运行的！\n\n" +
+                    "非管理员模式下：\n" +
+                    "• 局域网其他设备无法访问本服务（仅本机 localhost 可用）\n" +
+                    "• 打印/扫描/网络配置功能可能受限\n\n" +
+                    "建议：右键 PrintServer.exe → 以管理员身份运行",
+                    "打印服务 - 权限提醒",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+
             // 托盘（主线程消息循环）
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);

@@ -13,9 +13,10 @@
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>0.0.0.2</Version>
-    <AssemblyVersion>0.0.0.2</AssemblyVersion>
-    <FileVersion>0.0.0.2</FileVersion>
+    <!-- 版本号: CI 打 tag 构建时由环境变量 BUILD_VERSION 注入 (如 v0.0.0.5 -> 0.0.0.5) -->
+    <Version>$(BUILD_VERSION)</Version>
+    <AssemblyVersion>$(BUILD_VERSION)</AssemblyVersion>
+    <FileVersion>$(BUILD_VERSION)</FileVersion>
     <Product>内网打印及扫描服务</Product>
     <Company>Bgaidu</Company>
     <Copyright>© Bgaidu &amp; AI</Copyright>
