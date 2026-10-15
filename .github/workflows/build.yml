@@ -3,6 +3,7 @@ name: Build
 on:
   push:
     branches: [ main ]
+    tags: [ 'v*' ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
@@ -37,6 +38,7 @@ jobs:
           if (Test-Path "$dist/PrintServer.exe") {
             $size = (Get-Item "$dist/PrintServer.exe").Length
             Write-Host "PrintServer.exe ($([math]::Round($size/1MB,2)) MB) OK"
+            Write-Host "版本: $((Get-Item "$dist/PrintServer.exe").VersionInfo.FileVersion)"
           } else {
             throw "PrintServer.exe 未生成!"
           }
@@ -47,3 +49,45 @@ jobs:
           name: PrintServer-net48-x64
           path: bin/Release/net48/
           if-no-files-found: error
+
+  release:
+    name: Publish Release
+    needs: build
+    # 仅当推送的是 v* 标签时发布 (例如 v0.0.0.2)
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: PrintServer-net48-x64
+          path: dist
+
+      - name: Get tag name
+        id: tag
+        shell: bash
+        run: echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: ${{ steps.tag.outputs.tag }}
+          body: |
+            内网打印及扫描服务 C# 原生版 (${{ steps.tag.outputs.tag }})
+
+            ## 功能
+            - 打印: 图片/文本/PDF(poppler)/Office COM 静默打印 (指定打印机)
+            - 扫描: WIA 枚举 + 防锁自动释放
+            - 网页: 打印/扫描/文件管理/日志管理 (可设置访问密码)
+            - 日志: 按天生成, 记录访问 IP 与打印/扫描内容
+            - 托盘: 开机自启/端口/密码/网络配置/任意天日志
+
+            ## 部署
+            下载 `PrintServer.exe` (单文件, 自包含前端/poppler/图标),
+            目标机需安装 .NET Framework 4.8 (Win10/11 自带, Win7 SP1 需装一次)。
+          files: dist/PrintServer.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
