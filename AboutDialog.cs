@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.Drawing;
+using System.IO;
 using System.Windows.Forms;
 
 namespace PrintServer
@@ -20,14 +21,19 @@ namespace PrintServer
             ClientSize = new Size(420, 300);
             BackColor = Color.White;
 
-            // 图标（左上角）
+            // 图标（左上角，加载 logo.ico）
             var iconBox = new PictureBox
             {
                 Size = new Size(64, 64),
                 Location = new Point(28, 28),
                 SizeMode = PictureBoxSizeMode.Zoom,
             };
-            try { iconBox.Image = Icon.ToBitmap(); } catch { }
+            try
+            {
+                using (var icon = new Icon(Path.Combine(Program.BaseDir, "logo.ico")))
+                    iconBox.Image = icon.ToBitmap();
+            }
+            catch { try { iconBox.Image = Icon.ToBitmap(); } catch { } }
             Controls.Add(iconBox);
 
             // 名称

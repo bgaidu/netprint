@@ -34,6 +34,9 @@
   <ItemGroup>
     <Content Include="wwwroot\**\*" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="logo.ico" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="tools\poppler_bin\**\*" CopyToOutputDirectory="PreserveNewest" />
+    <!-- poppler 只输出一份: 源码在 tools/poppler_bin, 输出映射到根目录 poppler_bin/ (代码按此路径查找) -->
+    <Content Include="tools\poppler_bin\**\*"
+             Link="poppler_bin\%(RecursiveDir)%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
