@@ -59,8 +59,12 @@ namespace PrintServer
                 if (string.IsNullOrEmpty(id))
                     return "{\"success\":false,\"error\":\"未指定扫描仪\"}";
 
+                int deviceIndex;
+                if (!int.TryParse(id, out deviceIndex) || deviceIndex < 1)
+                    return "{\"success\":false,\"error\":\"扫描仪编号无效\"}";
+
                 // 第一次尝试
-                var result = DoScan(id, format, dpi);
+                var result = DoScan(deviceIndex, format, dpi);
                 if (result != null) return result;
 
                 // 失败: 仅当错误属于"设备存在但被锁定/占用"时才释放扫描仪并重试
@@ -70,7 +74,7 @@ namespace PrintServer
                     Log.Warn("扫描失败(疑似设备被锁定)，尝试释放扫描仪后重试...");
                     LastError = "";
                     ReleaseScanner();
-                    var retry = DoScan(id, format, dpi);
+                    var retry = DoScan(deviceIndex, format, dpi);
                     if (retry != null) return retry;
                 }
 
@@ -84,7 +88,7 @@ namespace PrintServer
         }
 
         /// <summary>实际执行扫描；成功返回 JSON，失败返回 null 并设置 LastError。</summary>
-        private static string DoScan(string id, string format, int dpi)
+        private static string DoScan(int deviceIndex, string format, int dpi)
         {
             try
             {
@@ -100,7 +104,7 @@ namespace PrintServer
                 try
                 {
                     // 按索引连接（1-based）
-                    device = mgr.DeviceInfos[int.Parse(id)].Connect();
+                    device = mgr.DeviceInfos[deviceIndex].Connect();
 
                     // 扫描配置
                     if (device != null)

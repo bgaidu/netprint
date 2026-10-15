@@ -61,7 +61,7 @@ namespace PrintServer
                 {
                     if (dlg.ShowDialog() == DialogResult.OK)
                     {
-                        Settings.WebPassword = dlg.Password;
+                        Settings.SetPassword(dlg.Password);
                         Settings.Save();
                         Refresh();
                         MessageBox.Show(dlg.Password.Length == 0

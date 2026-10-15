@@ -35,7 +35,7 @@
 
 <nav class="navbar navbar-dark bg-primary">
   <div class="container">
-    <span class="navbar-brand">🖨 内网打印及扫描服务</span>
+    <span class="navbar-brand">🖨 <span id="appTitle">内网打印及扫描服务</span> <small id="appVersion" class="text-white-50" style="font-size:0.75rem;"></small></span>
     <span class="text-white-50" id="serverInfo"></span>
   </div>
 </nav>
@@ -244,6 +244,7 @@ async function init() {
   try {
     const h = await fetch('/api/health').then(r => r.json());
     document.getElementById('serverInfo').textContent = `端口 ${h.port}`;
+    if (h.version) document.getElementById('appVersion').textContent = 'v' + h.version;
   } catch (e) {}
   // 检查是否需要密码
   try {

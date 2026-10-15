@@ -21,7 +21,7 @@ namespace PrintServer
                 {
                     // 前端登录时检查密码是否正确（payload: password）
                     var pwd = ctx.Request.Headers["X-Auth-Password"] ?? "";
-                    var ok = !Settings.PasswordEnabled || pwd == Settings.WebPassword;
+                    var ok = Settings.CheckPassword(pwd);
                     WebServer.WriteJson(ctx, 200,
                         "{\"enabled\":" + (Settings.PasswordEnabled ? "true" : "false") + ",\"ok\":" + (ok ? "true" : "false") + "}");
                     return;
@@ -30,8 +30,10 @@ namespace PrintServer
                 // ===== 健康检查 =====
                 if (path == "/api/health")
                 {
+                    var ver = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
                     WebServer.WriteJson(ctx, 200,
-                        "{\"service_running\":true,\"status\":\"ok\",\"port\":" + Program.Port + "}");
+                        "{\"service_running\":true,\"status\":\"ok\",\"port\":" + Program.Port +
+                        ",\"version\":\"" + ver + "\"}");
                     return;
                 }
 

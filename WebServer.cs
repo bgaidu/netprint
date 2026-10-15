@@ -149,7 +149,7 @@ namespace PrintServer
                 if (Settings.PasswordEnabled && !IsPublicResource(path))
                 {
                     var pwd = ctx.Request.Headers["X-Auth-Password"] ?? "";
-                    if (pwd != Settings.WebPassword)
+                    if (!Settings.CheckPassword(pwd))
                     {
                         Log.Warn($"访问被拒绝(密码错误): IP={ip} {ctx.Request.HttpMethod} {path}");
                         WebServer.WriteError(ctx, 401, "需要有效密码");
