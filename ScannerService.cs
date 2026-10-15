@@ -63,12 +63,16 @@ namespace PrintServer
                 var result = DoScan(id, format, dpi);
                 if (result != null) return result;
 
-                // 失败: 释放扫描仪（可能被前次扫描锁定），再重试一次
-                Log.Warn("扫描失败，尝试释放扫描仪后重试...");
-                LastError = "";
-                ReleaseScanner();
-                var retry = DoScan(id, format, dpi);
-                if (retry != null) return retry;
+                // 失败: 仅当错误属于"设备存在但被锁定/占用"时才释放扫描仪并重试
+                // (WIA 不可用/无设备/索引越界 属于环境问题，无需重启服务)
+                if (IsLockRelatedError(LastError))
+                {
+                    Log.Warn("扫描失败(疑似设备被锁定)，尝试释放扫描仪后重试...");
+                    LastError = "";
+                    ReleaseScanner();
+                    var retry = DoScan(id, format, dpi);
+                    if (retry != null) return retry;
+                }
 
                 return "{\"success\":false,\"error\":" + WebServer.JsonEncode(LastError) + "}";
             }
@@ -141,6 +145,19 @@ namespace PrintServer
                 LastError = ex.Message;
                 return null;
             }
+        }
+
+        /// <summary>判断错误是否属于"设备被锁定/占用"（这类才需要释放扫描仪）。</summary>
+        private static bool IsLockRelatedError(string error)
+        {
+            if (string.IsNullOrEmpty(error)) return false;
+            var e = error.ToLowerInvariant();
+            // 无设备/环境问题不释放
+            if (e.Contains("wia 不可用") || e.Contains("索引超出范围") || e.Contains("index out of range")) return false;
+            // 锁定/占用/总线错误 才释放
+            return e.Contains("busy") || e.Contains("locked") || e.Contains("占用") ||
+                   e.Contains("锁") || e.Contains("0x8000") || e.Contains("e_busy") ||
+                   e.Contains("device") || e.Contains("无法连接") || e.Contains("error");
         }
 
         /// <summary>

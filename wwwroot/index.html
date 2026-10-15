@@ -407,8 +407,8 @@ async function refreshFileList() {
       li.className = 'list-group-item d-flex align-items-center gap-2';
       li.innerHTML = `<span>🗎 ${f.name} <small class="text-muted">${(f.size/1024).toFixed(1)}KB</small></span>
         <span class="ms-auto">
-          <a class="btn btn-sm btn-outline-primary" href="/preview/${encodeURIComponent(f.name)}" target="_blank">预览</a>
-          <a class="btn btn-sm btn-outline-secondary" href="/uploads/${encodeURIComponent(f.name)}" download>下载</a>
+          <button class="btn btn-sm btn-outline-primary" onclick="previewFile('${encodeURIComponent(f.name)}')">预览</button>
+          <button class="btn btn-sm btn-outline-secondary" onclick="downloadFile('${encodeURIComponent(f.name)}')">下载</button>
           <button class="btn btn-sm btn-outline-danger" onclick="delFile('${encodeURIComponent(f.name)}')">删除</button>
         </span>`;
       ul1.appendChild(li);
@@ -424,8 +424,8 @@ async function refreshFileList() {
       li.innerHTML = `<span>🖼 ${f.name} <small class="text-muted">${(f.size/1024).toFixed(1)}KB</small></span>
         <span class="ms-auto">
           <button class="btn btn-sm btn-outline-success" onclick="reprintScanned('${encodeURIComponent(f.name)}')">🖨 打印</button>
-          <a class="btn btn-sm btn-outline-primary" href="/api/scanned/${encodeURIComponent(f.name)}" target="_blank">查看</a>
-          <a class="btn btn-sm btn-outline-secondary" href="/api/scanned/${encodeURIComponent(f.name)}" download>下载</a>
+          <button class="btn btn-sm btn-outline-primary" onclick="previewFile('${encodeURIComponent(f.name)}', true)">查看</button>
+          <button class="btn btn-sm btn-outline-secondary" onclick="downloadScanned('${encodeURIComponent(f.name)}')">下载</button>
           <button class="btn btn-sm btn-outline-danger" onclick="delScanned('${encodeURIComponent(f.name)}')">删除</button>
         </span>`;
       ul2.appendChild(li);
@@ -507,6 +507,46 @@ document.getElementById('btnRefreshLog').onclick = () => {
   loadLogDates();
   loadLogContent(document.getElementById('logDateSelect').value);
 };
+
+
+// ===== 下载/预览（带密码头，避免密码模式下 401） =====
+async function fetchBlob(url) {
+  const resp = await authFetch(url);
+  if (!resp.ok) throw new Error('HTTP ' + resp.status);
+  return await resp.blob();
+}
+function saveBlob(blob, filename) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
+async function previewFile(encodedName, isScanned) {
+  const name = decodeURIComponent(encodedName);
+  const url = isScanned ? '/api/scanned/' + encodedName : '/preview/' + encodedName;
+  try {
+    const blob = await fetchBlob(url);
+    const objUrl = URL.createObjectURL(blob);
+    window.open(objUrl, '_blank');
+    setTimeout(() => URL.revokeObjectURL(objUrl), 60000);
+  } catch (e) { alert('预览失败: ' + e.message); }
+}
+async function downloadFile(encodedName) {
+  const name = decodeURIComponent(encodedName);
+  try {
+    const blob = await fetchBlob('/uploads/' + encodedName);
+    saveBlob(blob, name);
+  } catch (e) { alert('下载失败: ' + e.message); }
+}
+async function downloadScanned(encodedName) {
+  const name = decodeURIComponent(encodedName);
+  try {
+    const blob = await fetchBlob('/api/scanned/' + encodedName);
+    saveBlob(blob, name);
+  } catch (e) { alert('下载失败: ' + e.message); }
+}
 
 init();
 </script>
