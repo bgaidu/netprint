@@ -3,7 +3,7 @@
 基于 C# (.NET Framework 4.8) 重写的内网打印/扫描服务，**单文件发布**（exe 自包含前端/poppler/图标）。
 支持 Windows 7 SP1 / 8 / 10 / 11 (x64)。
 
-当前版本：**v0.0.0.2**（[Releases](https://github.com/bgaidu/netprint/releases) 下载）
+当前版本：**v0.0.0.6**（[Releases](https://github.com/bgaidu/netprint/releases) 下载）
 
 ## 功能
 - **打印**: 图片(JPG/PNG/BMP/GIF)、文本(TXT) GDI 直打；PDF 走 poppler 渲染成图再打（不依赖 Acrobat）；Word/Excel/PPT 走 COM 静默打印（指定打印机、份数），失败自动回退 Shell
