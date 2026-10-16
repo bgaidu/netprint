@@ -164,10 +164,19 @@ namespace PrintServer
         }
 
         /// <summary>按扩展名分发 COM 打印；成功返回 true，失败返回 false（调用方决定是否 fallback）。</summary>
-        public static bool TryPrint(string path, string printer, int copies, int duplex, string papersize, string ext)
+        public static bool TryPrint(string path, string printer, int copies, int duplex, string papersize, string ext, int pageset = 0)
         {
             LastError = "";
-            if (ext == ".doc" || ext == ".docx") return WordPrint(path, printer, copies, duplex, papersize);
+            if (pageset == 1 || pageset == 2)
+            {
+                // 奇偶页仅 Word 支持（PrintOut 内置 OddPages/EvenPages 范围）；Excel/PPT 不支持
+                if (ext != ".doc" && ext != ".docx")
+                {
+                    Log.Warn($"奇偶页打印仅支持 Word 文档，当前 {ext} 将按全部页面打印");
+                    pageset = 0;
+                }
+            }
+            if (ext == ".doc" || ext == ".docx") return WordPrint(path, printer, copies, duplex, papersize, pageset);
             if (ext == ".xls" || ext == ".xlsx") return ExcelPrint(path, printer, copies, duplex, papersize);
             if (ext == ".ppt" || ext == ".pptx") return PptPrint(path, printer, copies, duplex);
             return false;
@@ -204,7 +213,7 @@ namespace PrintServer
         }
 
         /// <summary>Word: Documents.Open → 设 ActivePrinter → 设纸张/双面 → PrintOut → Close → Quit。</summary>
-        private static bool WordPrint(string path, string printer, int copies, int duplex, string papersize)
+        private static bool WordPrint(string path, string printer, int copies, int duplex, string papersize, int pageset)
         {
             return RunInSta(() =>
             {
@@ -236,12 +245,16 @@ namespace PrintServer
                         bool duplexSet = false;
                         try { duplexSet = SetPrinterDuplex(printer, duplex); } catch { }
 
+                        // 奇偶页范围: wdPrintOddPages=5 / wdPrintEvenPages=6（0=全部，用默认 wdPrintAllDocument=0）
+                        int range = 0;
+                        if (pageset == 1) range = 5;
+                        else if (pageset == 2) range = 6;
+
                         try
                         {
                             // PrintOut(Background, Append, Range, OutputFileName, From, To,
-                            //           Item, Copies, Pages, PageType, PrintToFile, Collate,
-                            //           ...)
-                            doc.PrintOut(false, false, 0, "", "", "", 0, copies, "", 0, false, true);
+                            //           Item, Copies, Pages, PageType, PrintToFile, Collate, ...)
+                            doc.PrintOut(false, false, range, "", "", "", 0, copies, "", 0, false, true);
                         }
                         finally
                         {

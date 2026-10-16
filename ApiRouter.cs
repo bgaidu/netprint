@@ -232,11 +232,13 @@ namespace PrintServer
             if (string.IsNullOrEmpty(printer))
                 throw new InvalidOperationException("未选择打印机");
 
-            int copies = 1, duplex = 1;
+            int copies = 1, duplex = 1, pageset = 0;
             int.TryParse(GetField(form, "copies"), out copies);
             int.TryParse(GetField(form, "duplex"), out duplex);
+            int.TryParse(GetField(form, "pageset"), out pageset);
             if (copies < 1) copies = 1;
             if (copies > 99) copies = 99;
+            if (pageset < 0 || pageset > 2) pageset = 0;
             var papersize = GetField(form, "papersize");
             var quality = GetField(form, "quality");
 
@@ -254,10 +256,11 @@ namespace PrintServer
                 try
                 {
                     var saved = FileStore.SaveUpload(f.Name, f.Data);
-                    var ok = PrinterService.PrintFile(saved, printer, copies, duplex, papersize, quality);
+                    var ok = PrinterService.PrintFile(saved, printer, copies, duplex, papersize, quality, pageset);
                     // 内容日志: IP + 文件 + 打印机 + 参数 + 结果
+                    var pageDesc = pageset == 1 ? "奇数页" : (pageset == 2 ? "偶数页" : "全部页");
                     Log.Info($"打印: IP={clientIp} 文件={f.Name} 打印机={printer} 份数={copies} " +
-                             $"双面={(duplex == 1 ? "单面" : "双面")} 纸张={papersize} 结果={(ok ? "成功" : "失败:" + PrinterService.LastError)}");
+                             $"双面={(duplex == 1 ? "单面" : "双面")} 页码={pageDesc} 纸张={papersize} 结果={(ok ? "成功" : "失败:" + PrinterService.LastError)}");
                     results.Append("{\"file\":").Append(WebServer.JsonEncode(f.Name))
                            .Append(",\"success\":").Append(ok ? "true" : "false")
                            .Append(",\"message\":").Append(WebServer.JsonEncode(PrinterService.LastError)).Append("}");
@@ -296,13 +299,15 @@ namespace PrintServer
             }
             int copies = json.GetInt("copies", 1);
             int duplex = json.GetInt("duplex", 1);
+            int pageset = json.GetInt("pageset", 0);
             if (copies < 1) copies = 1;
             if (copies > 99) copies = 99;
+            if (pageset < 0 || pageset > 2) pageset = 0;
 
             // 纸张大小由前端传入（9=A4 8=A3 11=A5 1=Letter 5=Legal）；为空则用打印机默认纸张
             var papersize = json.Get("papersize");
 
-            var ok = PrinterService.PrintFile(full, printer, copies, duplex, papersize, "300x300", "scanned:" + name);
+            var ok = PrinterService.PrintFile(full, printer, copies, duplex, papersize, "300x300", pageset, "scanned:" + name);
             Log.Info($"扫描文件重新打印: {name} -> {printer} 结果:{ok}");
             WebServer.WriteJson(ctx, 200,
                 "{\"success\":" + (ok ? "true" : "false") +

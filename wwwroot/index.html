@@ -72,6 +72,15 @@
                 <option value="3">双面(短边)</option>
               </select>
             </div>
+            <div class="col-md-3">
+              <label class="form-label">页码范围</label>
+              <select class="form-select" id="pageset">
+                <option value="0">全部页</option>
+                <option value="1">仅奇数页</option>
+                <option value="2">仅偶数页</option>
+              </select>
+              <div class="form-text text-muted" style="font-size:0.75rem;">奇数/偶数页仅 PDF、Word 生效</div>
+            </div>
             <div class="col-md-4">
               <label class="form-label">纸张</label>
               <select class="form-select" id="papersize">
@@ -168,6 +177,14 @@
                     <option value="1">单面</option>
                     <option value="2">双面(长边)</option>
                     <option value="3">双面(短边)</option>
+                  </select>
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label">页码范围</label>
+                  <select class="form-select" id="scanPageset">
+                    <option value="0">全部页</option>
+                    <option value="1">仅奇数页</option>
+                    <option value="2">仅偶数页</option>
                   </select>
                 </div>
                 <div class="col-md-3">
@@ -428,6 +445,7 @@ document.getElementById('btnPrint').onclick = async () => {
     fd.append('printer', document.getElementById('printerSelect').value);
     fd.append('copies', document.getElementById('copies').value);
     fd.append('duplex', document.getElementById('duplex').value);
+    fd.append('pageset', document.getElementById('pageset').value);
     fd.append('papersize', document.getElementById('papersize').value);
     fd.append('quality', document.getElementById('quality').value);
     for (const p of pending) fd.append('file', p.file, p.name);
@@ -561,13 +579,14 @@ async function printScannedNow() {
   const copies = Math.min(99, Math.max(1, parseInt(document.getElementById('scanCopies').value) || 1));
   const duplex = parseInt(document.getElementById('scanDuplex').value) || 1;
   const papersize = document.getElementById('scanPapersize').value;
+  const pageset = parseInt(document.getElementById('scanPageset').value) || 0;
   if (!confirm(`用打印机 [${printer}] 打印扫描件 ${name} (${copies}份, 双面:${duplex===1?'单面':duplex===2?'长边':'短边'})?`)) return;
 
   try {
     const resp = await authFetch(`/api/scanned/${encodeURIComponent(name)}/print`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ printer, copies, duplex, papersize })
+      body: JSON.stringify({ printer, copies, duplex, pageset, papersize })
     });
     const data = await resp.json();
     alert(data.success ? '✅ 打印任务已发送' : ('❌ 打印失败: ' + (data.message || data.error || '未知错误')));
@@ -585,13 +604,14 @@ async function reprintScanned(encodedName) {
   const copies = Math.min(99, Math.max(1, parseInt(document.getElementById('copies').value) || 1));
   const duplex = parseInt(document.getElementById('duplex').value) || 1;
   const papersize = document.getElementById('papersize').value || '';
+  const pageset = parseInt(document.getElementById('pageset').value) || 0;
   if (!confirm(`用打印机 [${printer}] 重新打印 ${name} (${copies}份)?`)) return;
 
   try {
     const resp = await authFetch(`/api/scanned/${encodedName}/print`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ printer, copies, duplex, papersize })
+      body: JSON.stringify({ printer, copies, duplex, pageset, papersize })
     });
     const data = await resp.json();
     alert(data.success ? '✅ 打印任务已发送' : ('❌ 打印失败: ' + (data.message || data.error || '未知错误')));

@@ -45,6 +45,20 @@ namespace PrintServer
             Port = newPort;
             RestartServer();
             Log.Info($"端口已更改为 {newPort}");
+
+            // 端口变更后同步开放新端口的防火墙入站规则
+            try
+            {
+                var fw = FirewallHelper.EnsurePortOpen(newPort);
+                if (fw.Success)
+                    Log.Info(fw.Message);
+                else
+                    Log.Warn("防火墙端口未开放: " + fw.Message);
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("开放防火墙端口异常: " + ex.Message);
+            }
         }
 
         [STAThread]
@@ -121,6 +135,20 @@ namespace PrintServer
                 return;
             }
 
+            // 开放自身监听端口的防火墙入站规则（需要管理员权限；非管理员则仅提示，不影响服务）
+            try
+            {
+                var fw = FirewallHelper.EnsurePortOpen(Port);
+                if (fw.Success)
+                    Log.Info(fw.Message);
+                else
+                    Log.Warn("防火墙端口未开放: " + fw.Message + "（局域网其他设备可能无法访问）");
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("开放防火墙端口异常: " + ex.Message);
+            }
+
             // 非管理员运行提醒（重要提示，避免用户不知情）
             if (!IsAdministrator())
             {
@@ -176,7 +204,7 @@ namespace PrintServer
             _tray.Dispose();
         }
 
-        private static bool IsAdministrator()
+        public static bool IsAdministrator()
         {
             try
             {

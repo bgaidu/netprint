@@ -37,6 +37,7 @@ namespace PrintServer
             var netMenu = new ToolStripMenuItem("网络配置（需要管理员权限）");
             netMenu.DropDownItems.Add("设置当前IP为静态", null, OnSetStaticIp);
             netMenu.DropDownItems.Add("启用DHCP", null, OnEnableDhcp);
+            netMenu.DropDownItems.Add("开放防火墙端口", null, OnOpenFirewall);
             m.Items.Add(netMenu);
 
             m.Items.Add("打开网页", null, OnOpenHome);
@@ -105,6 +106,21 @@ namespace PrintServer
             catch (Exception ex)
             {
                 MessageBox.Show("操作失败: " + ex.Message, "网络配置", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        /// <summary>手动为当前服务端口开放防火墙入站规则。</summary>
+        private static void OnOpenFirewall(object sender, EventArgs e)
+        {
+            try
+            {
+                var r = FirewallHelper.EnsurePortOpen(Program.Port);
+                MessageBox.Show(r.Message, "防火墙端口",
+                    MessageBoxButtons.OK, r.Success ? MessageBoxIcon.Information : MessageBoxIcon.Error);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("操作失败: " + ex.Message, "防火墙端口", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 

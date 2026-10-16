@@ -165,7 +165,7 @@ namespace PrintServer
         /// - 其他 (pdf/doc/xls/ppt): 尝试 Shell 打开打印（需要安装对应软件）
         /// </summary>
         public static bool PrintFile(string path, string printer, int copies, int duplex,
-            string papersize, string quality, string jobName = null)
+            string papersize, string quality, int pageset = 0, string jobName = null)
         {
             // 设备互斥：等待扫描完成再打印（防止一体机设备冲突）
             if (!DeviceMutex.TryEnterPrint())
@@ -191,7 +191,7 @@ namespace PrintServer
 
                         // PDF: 优先 poppler 渲染成图片再 GDI 打印（不依赖 Acrobat，老旧打印机兼容好）
                         if (ext == ".pdf")
-                            return PrintPdf(path, printer, copies, duplex, papersize, quality, jobName);
+                            return PrintPdf(path, printer, copies, duplex, papersize, quality, pageset, jobName);
 
                         // Office: 优先 COM 静默打印（可靠、无声无窗口），失败回退 Shell
                         if (ext == ".doc" || ext == ".docx" || ext == ".xls" || ext == ".xlsx" ||
@@ -328,7 +328,7 @@ namespace PrintServer
         /// 不依赖 Acrobat/Edge。pdftoppm 位置：exe 同目录 poppler_bin/，或系统 PATH。
         /// </summary>
         private static bool PrintPdf(string path, string printer, int copies, int duplex,
-            string papersize, string quality, string jobName)
+            string papersize, string quality, int pageset, string jobName)
         {
             var settings = new PrinterSettings { PrinterName = printer };
             if (!settings.IsValid) { LastError = "打印机不可用: " + printer; return false; }
@@ -342,6 +342,20 @@ namespace PrintServer
                 LastError = "PDF 渲染失败: " + LastError;
                 try { Directory.Delete(tmpDir, true); } catch { }
                 return false;
+            }
+
+            // 2. 奇偶页筛选（pageset: 0全部 1奇数页 2偶数页）
+            if (pageset == 1 || pageset == 2)
+            {
+                var filtered = new List<string>();
+                for (int i = 0; i < imagePaths.Count; i++)
+                {
+                    bool isOdd = (i + 1) % 2 == 1; // 第1页=奇数
+                    if (pageset == 1 && isOdd) filtered.Add(imagePaths[i]);
+                    else if (pageset == 2 && !isOdd) filtered.Add(imagePaths[i]);
+                }
+                imagePaths = filtered;
+                Log.Info($"PDF 奇偶页筛选: {(pageset == 1 ? "奇数页" : "偶数页")}, 剩余 {imagePaths.Count} 页");
             }
 
             try
