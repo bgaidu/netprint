@@ -297,7 +297,10 @@ namespace PrintServer
             if (copies < 1) copies = 1;
             if (copies > 99) copies = 99;
 
-            var ok = PrinterService.PrintFile(full, printer, copies, duplex, "9", "300x300", "scanned:" + name);
+            // 纸张大小由前端传入（9=A4 8=A3 11=A5 1=Letter 5=Legal）；为空则用打印机默认纸张
+            var papersize = json.Get("papersize");
+
+            var ok = PrinterService.PrintFile(full, printer, copies, duplex, papersize, "300x300", "scanned:" + name);
             Log.Info($"扫描文件重新打印: {name} -> {printer} 结果:{ok}");
             WebServer.WriteJson(ctx, 200,
                 "{\"success\":" + (ok ? "true" : "false") +

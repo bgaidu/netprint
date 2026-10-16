@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
+using System.Text;
 using System.Windows.Forms;
 
 namespace PrintServer
@@ -39,6 +40,7 @@ namespace PrintServer
             m.Items.Add(netMenu);
 
             m.Items.Add("打开网页", null, OnOpenHome);
+            m.Items.Add("生成网址快捷方式(.url)", null, OnCreateShortcut);
             m.Items.Add(LogMenu());
             m.Items.Add("清理日志", null, OnCleanLogs);
             m.Items.Add("重新启动服务", null, OnRestart);
@@ -160,6 +162,33 @@ namespace PrintServer
         private void OnOpenHome(object sender, EventArgs e)
         {
             try { Process.Start($"http://{GetLocalIp()}:{Program.Port}/"); } catch { }
+        }
+
+        /// <summary>在程序目录生成 .url 快捷方式（双击即打开服务网页），可发送到群。</summary>
+        private void OnCreateShortcut(object sender, EventArgs e)
+        {
+            try
+            {
+                var url = $"http://{GetLocalIp()}:{Program.Port}/";
+                var file = Path.Combine(Program.BaseDir, "打印服务.url");
+                File.WriteAllText(file,
+                    "[InternetShortcut]\r\nURL=" + url + "\r\n",
+                    Encoding.UTF8);
+
+                // 打开所在目录并选中该文件，方便直接拖进群
+                try { Process.Start("explorer.exe", "/select,\"" + file + "\""); } catch { }
+
+                MessageBox.Show(
+                    "已生成网址快捷方式：\n" + file +
+                    "\n\n文件内容：\n" + url +
+                    "\n\n可将其拖拽/发送到 QQ、微信群，对方双击即可打开打印页面。",
+                    "打印服务", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("生成快捷方式失败: " + ex.Message, "打印服务",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         /// <summary>日志子菜单：列出所有按天日志文件，点击任意一天用记事本打开。</summary>

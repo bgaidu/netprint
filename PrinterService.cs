@@ -197,7 +197,7 @@ namespace PrintServer
                         if (ext == ".doc" || ext == ".docx" || ext == ".xls" || ext == ".xlsx" ||
                             ext == ".ppt" || ext == ".pptx")
                         {
-                            if (OfficePrintHelper.TryPrint(path, printer, copies, ext))
+                            if (OfficePrintHelper.TryPrint(path, printer, copies, duplex, papersize, ext))
                                 return true;
                             Log.Warn($"COM 打印失败({OfficePrintHelper.LastError})，回退 Shell 打印: {Path.GetFileName(path)}");
                             return PrintViaShell(path, printer, jobName);

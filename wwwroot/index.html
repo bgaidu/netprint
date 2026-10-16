@@ -151,6 +151,43 @@
             <button class="btn btn-primary" id="btnScan">📷 开始扫描</button>
             <div class="ms-auto text-muted small" id="scanStatus"></div>
           </div>
+          <div class="mt-3" id="scanPrintArea" style="display:none;">
+            <div class="border rounded p-3 bg-light">
+              <div class="row g-2 align-items-end">
+                <div class="col-md-4">
+                  <label class="form-label">打印机</label>
+                  <select class="form-select" id="scanPrinterSelect"><option>加载中...</option></select>
+                </div>
+                <div class="col-md-2">
+                  <label class="form-label">份数</label>
+                  <input type="number" class="form-control" id="scanCopies" value="1" min="1" max="99">
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label">双面</label>
+                  <select class="form-select" id="scanDuplex">
+                    <option value="1">单面</option>
+                    <option value="2">双面(长边)</option>
+                    <option value="3">双面(短边)</option>
+                  </select>
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label">纸张</label>
+                  <select class="form-select" id="scanPapersize">
+                    <option value="">打印机默认</option>
+                    <option value="9" selected>A4</option>
+                    <option value="8">A3</option>
+                    <option value="11">A5</option>
+                    <option value="1">Letter</option>
+                    <option value="5">Legal</option>
+                  </select>
+                </div>
+                <div class="col-12 mt-2">
+                  <button class="btn btn-success" id="btnPrintScanned" disabled>🖨 打印此扫描件</button>
+                  <span class="text-muted small ms-2" id="scanPrintFile"></span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -431,6 +468,17 @@ document.getElementById('btnScan').onclick = async () => {
     const data = await resp.json();
     if (data.success) {
       status.textContent = `扫描完成: ${data.file}`;
+      // 显示直接打印区，并同步打印页当前设置
+      const printArea = document.getElementById('scanPrintArea');
+      printArea.style.display = 'block';
+      document.getElementById('scanPrintFile').textContent = data.file;
+      document.getElementById('btnPrintScanned').disabled = false;
+      document.getElementById('scanCopies').value = document.getElementById('copies').value;
+      document.getElementById('scanDuplex').value = document.getElementById('duplex').value;
+      const ps = document.getElementById('scanPapersize');
+      const curPs = document.getElementById('papersize').value;
+      if (curPs && [...ps.options].some(o => o.value === curPs)) ps.value = curPs;
+      syncScanPrinters();
       refreshFileList();
     } else {
       status.textContent = '扫描失败: ' + (data.error || '未知错误');
@@ -479,6 +527,53 @@ async function refreshFileList() {
   } catch (e) {}
 }
 
+// 扫描页打印机下拉：复用打印页的打印机列表
+function syncScanPrinters() {
+  const sel = document.getElementById('scanPrinterSelect');
+  if (!sel) return;
+  sel.innerHTML = '';
+  if (!printers.length) {
+    sel.innerHTML = '<option>未检测到可用打印机</option>';
+    return;
+  }
+  const cur = document.getElementById('printerSelect').value;
+  printers.forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p.name;
+    let label = p.name + (p.is_default ? ' (默认)' : '');
+    if (p.online === false) label += ' ⛔ 离线';
+    else if (p.status && p.status !== '就绪') label += ' ⚠ ' + p.status;
+    opt.textContent = label;
+    sel.appendChild(opt);
+  });
+  if (cur && [...sel.options].some(o => o.value === cur)) sel.value = cur;
+}
+
+// 扫描完成后直接打印当前扫描文件（带纸张设置）
+async function printScannedNow() {
+  const name = document.getElementById('scanPrintFile').textContent;
+  if (!name) { alert('没有可打印的扫描文件'); return; }
+  const printer = document.getElementById('scanPrinterSelect').value;
+  if (!printer || printer === '未检测到可用打印机') { alert('请先选择打印机'); return; }
+  const copies = Math.min(99, Math.max(1, parseInt(document.getElementById('scanCopies').value) || 1));
+  const duplex = parseInt(document.getElementById('scanDuplex').value) || 1;
+  const papersize = document.getElementById('scanPapersize').value;
+  if (!confirm(`用打印机 [${printer}] 打印扫描件 ${name} (${copies}份, 双面:${duplex===1?'单面':duplex===2?'长边':'短边'})?`)) return;
+
+  try {
+    const resp = await authFetch(`/api/scanned/${encodeURIComponent(name)}/print`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ printer, copies, duplex, papersize })
+    });
+    const data = await resp.json();
+    alert(data.success ? '✅ 打印任务已发送' : ('❌ 打印失败: ' + (data.message || data.error || '未知错误')));
+  } catch (e) {
+    alert('请求失败: ' + e.message);
+  }
+}
+document.getElementById('btnPrintScanned').onclick = printScannedNow;
+
 // 扫描文件重新打印：用当前选中的打印机
 async function reprintScanned(encodedName) {
   const name = decodeURIComponent(encodedName);
@@ -486,13 +581,14 @@ async function reprintScanned(encodedName) {
   if (!printer || printer === '未检测到可用打印机') { alert('请先在打印页选择打印机'); return; }
   const copies = Math.min(99, Math.max(1, parseInt(document.getElementById('copies').value) || 1));
   const duplex = parseInt(document.getElementById('duplex').value) || 1;
+  const papersize = document.getElementById('papersize').value || '';
   if (!confirm(`用打印机 [${printer}] 重新打印 ${name} (${copies}份)?`)) return;
 
   try {
     const resp = await authFetch(`/api/scanned/${encodedName}/print`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ printer, copies, duplex })
+      body: JSON.stringify({ printer, copies, duplex, papersize })
     });
     const data = await resp.json();
     alert(data.success ? '✅ 打印任务已发送' : ('❌ 打印失败: ' + (data.message || data.error || '未知错误')));
