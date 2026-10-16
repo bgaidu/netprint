@@ -167,19 +167,48 @@ namespace PrintServer
         public static bool TryPrint(string path, string printer, int copies, int duplex, string papersize, string ext, int pageset = 0)
         {
             LastError = "";
-            if (pageset == 1 || pageset == 2)
-            {
-                // 奇偶页仅 Word 支持（PrintOut 内置 OddPages/EvenPages 范围）；Excel/PPT 不支持
-                if (ext != ".doc" && ext != ".docx")
-                {
-                    Log.Warn($"奇偶页打印仅支持 Word 文档，当前 {ext} 将按全部页面打印");
-                    pageset = 0;
-                }
-            }
+            // Word 原生支持奇偶页(PrintOut OddPages/EvenPages)；Excel/PPT 通过中转 PDF 实现奇偶页
             if (ext == ".doc" || ext == ".docx") return WordPrint(path, printer, copies, duplex, papersize, pageset);
-            if (ext == ".xls" || ext == ".xlsx") return ExcelPrint(path, printer, copies, duplex, papersize);
-            if (ext == ".ppt" || ext == ".pptx") return PptPrint(path, printer, copies, duplex);
+            if (ext == ".xls" || ext == ".xlsx") return ExcelPrint(path, printer, copies, duplex, papersize, pageset);
+            if (ext == ".ppt" || ext == ".pptx") return PptPrint(path, printer, copies, duplex, pageset);
             return false;
+        }
+
+        /// <summary>
+        /// 通用中转: 在 STA 内用 COM 把 Office 文档导出为临时 PDF，再复用 PrinterService.PrintPdf 的
+        /// 奇偶页渲染筛选逻辑打印（Excel/PPT 的 PrintOut 无奇偶页参数，借此实现）。导出与打印均在
+        /// 同一 STA 线程完成，结束后清理临时 PDF。
+        /// </summary>
+        private static bool PrintViaTempPdf(Func<string> exportPdf, string printer, int copies,
+            int duplex, string papersize, int pageset, int timeoutMs)
+        {
+            return RunInSta(() =>
+            {
+                string pdf = null;
+                try
+                {
+                    pdf = exportPdf();
+                    if (string.IsNullOrEmpty(pdf) || !File.Exists(pdf))
+                    {
+                        LastError = "Office 导出 PDF 失败";
+                        return false;
+                    }
+                    // 复用 PDF 打印（含奇偶页筛选）
+                    return PrinterService.PrintFile(pdf, printer, copies, duplex, papersize, "300x300", pageset);
+                }
+                catch (Exception ex)
+                {
+                    LastError = "中转 PDF 打印失败: " + ex.Message;
+                    return false;
+                }
+                finally
+                {
+                    if (!string.IsNullOrEmpty(pdf))
+                    {
+                        try { File.Delete(pdf); } catch { }
+                    }
+                }
+            }, timeoutMs);
         }
 
         /// <summary>在 STA 线程执行 Func，超过 timeoutMs 视为失败（COM 卡死保护）。</summary>
@@ -281,9 +310,17 @@ namespace PrintServer
             }, 90000);
         }
 
-        /// <summary>Excel: Workbooks.Open(ReadOnly) → 设 ActivePrinter → 设纸张/双面 → PrintOut → Close → Quit。</summary>
-        private static bool ExcelPrint(string path, string printer, int copies, int duplex, string papersize)
+        /// <summary>Excel: Workbooks.Open(ReadOnly) → 设 ActivePrinter → 设纸张/双面 → PrintOut → Close → Quit。
+        /// 奇偶页(pageset!=0) 通过先导出 PDF 再复用 PDF 奇偶页筛选实现。</summary>
+        private static bool ExcelPrint(string path, string printer, int copies, int duplex, string papersize, int pageset)
         {
+            // 奇偶页: COM PrintOut 无奇偶参数，先导出 PDF 再走 PDF 奇偶筛选
+            if (pageset == 1 || pageset == 2)
+            {
+                Log.Info("Excel 奇偶页: 中转导出 PDF 后筛选打印");
+                return PrintViaTempPdf(() => ExcelExportPdf(path), printer, copies, duplex, papersize, pageset, 90000);
+            }
+
             return RunInSta(() =>
             {
                 dynamic excel = null, wb = null;
@@ -346,10 +383,48 @@ namespace PrintServer
             }, 90000);
         }
 
-        /// <summary>PowerPoint: Presentations.Open → 设 ActivePrinter → 设双面(DEVMODE) → PrintOut → Close → Quit。
-        /// PPT 无页面纸张概念，纸张大小由驱动按幻灯片尺寸处理，仅设置双面。</summary>
-        private static bool PptPrint(string path, string printer, int copies, int duplex)
+        /// <summary>在 STA 内用 Excel COM 把工作簿导出为 PDF，返回临时文件路径（调用方负责删除）。</summary>
+        private static string ExcelExportPdf(string path)
         {
+            dynamic excel = null, wb = null;
+            string pdf = Path.Combine(Path.GetTempPath(), "PrintServerXls_" + Guid.NewGuid().ToString("N") + ".pdf");
+            try
+            {
+                Type t = Type.GetTypeFromProgID("Excel.Application");
+                if (t == null) { LastError = "未安装 Excel/WPS"; return null; }
+                excel = Activator.CreateInstance(t);
+                excel.Visible = false;
+                try { excel.DisplayAlerts = false; } catch { }
+                wb = excel.Workbooks.Open(path, 0, true); // ReadOnly
+                // ExportAsFixedFormat(Type=0 PDF, Filename, Quality=0, IncludeDocProperties,
+                //                    IgnorePrintAreas, From, To, OpenAfterPublish, FixedFormatExtClassPtr)
+                wb.ExportAsFixedFormat(0, pdf, 0, true, false, Type.Missing, Type.Missing, false, Type.Missing);
+                return pdf;
+            }
+            catch (Exception ex)
+            {
+                LastError = "Excel 导出 PDF 失败: " + ex.Message;
+                try { if (File.Exists(pdf)) File.Delete(pdf); } catch { }
+                return null;
+            }
+            finally
+            {
+                try { if (wb != null) wb.Close(false); } catch { }
+                try { if (excel != null) excel.Quit(); } catch { }
+                try { if (wb != null) Marshal.ReleaseComObject(wb); } catch { }
+                try { if (excel != null) Marshal.ReleaseComObject(excel); } catch { }
+            }
+        }
+        /// PPT 无页面纸张概念，纸张大小由驱动按幻灯片尺寸处理，仅设置双面。</summary>
+        private static bool PptPrint(string path, string printer, int copies, int duplex, int pageset)
+        {
+            // 奇偶页: COM PrintOut 无奇偶参数，先导出 PDF 再走 PDF 奇偶筛选
+            if (pageset == 1 || pageset == 2)
+            {
+                Log.Info("PPT 奇偶页: 中转导出 PDF 后筛选打印");
+                return PrintViaTempPdf(() => PptExportPdf(path), printer, copies, duplex, papersize: "", pageset, 120000);
+            }
+
             return RunInSta(() =>
             {
                 dynamic ppt = null, pres = null;
@@ -396,6 +471,36 @@ namespace PrintServer
                     try { if (ppt != null) Marshal.ReleaseComObject(ppt); } catch { }
                 }
             }, 120000);
+        }
+
+        /// <summary>在 STA 内用 PowerPoint COM 把演示文稿导出为 PDF，返回临时文件路径（调用方负责删除）。</summary>
+        private static string PptExportPdf(string path)
+        {
+            dynamic ppt = null, pres = null;
+            string pdf = Path.Combine(Path.GetTempPath(), "PrintServerPpt_" + Guid.NewGuid().ToString("N") + ".pdf");
+            try
+            {
+                Type t = Type.GetTypeFromProgID("PowerPoint.Application");
+                if (t == null) { LastError = "未安装 PowerPoint/WPS"; return null; }
+                ppt = Activator.CreateInstance(t);
+                pres = ppt.Presentations.Open(path, -1 /*msoTrue*/, 0 /*msoFalse*/, 0 /*msoFalse*/);
+                // ExportAsFixedFormat(Path, FixedFormatType=2 PDF, ...)
+                pres.ExportAsFixedFormat(pdf, 2);
+                return pdf;
+            }
+            catch (Exception ex)
+            {
+                LastError = "PPT 导出 PDF 失败: " + ex.Message;
+                try { if (File.Exists(pdf)) File.Delete(pdf); } catch { }
+                return null;
+            }
+            finally
+            {
+                try { if (pres != null) pres.Close(); } catch { }
+                try { if (ppt != null) ppt.Quit(); } catch { }
+                try { if (pres != null) Marshal.ReleaseComObject(pres); } catch { }
+                try { if (ppt != null) Marshal.ReleaseComObject(ppt); } catch { }
+            }
         }
     }
 }
