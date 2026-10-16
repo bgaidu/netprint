@@ -31,9 +31,11 @@ namespace PrintServer
                 if (path == "/api/health")
                 {
                     var ver = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+                    // lan_ip: 服务端局域网 IP，供前端二维码/快捷方式使用（不依赖浏览器 location.origin）
+                    var lanIp = NetworkConfig.GetPrimaryIPv4();
                     WebServer.WriteJson(ctx, 200,
                         "{\"service_running\":true,\"status\":\"ok\",\"port\":" + Program.Port +
-                        ",\"version\":\"" + ver + "\"}");
+                        ",\"version\":\"" + ver + "\",\"lan_ip\":\"" + WebServer.JsonEncode(lanIp) + "\"}");
                     return;
                 }
 

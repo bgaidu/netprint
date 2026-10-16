@@ -319,11 +319,14 @@ function refreshAll() {
 
 // ===== 初始化 =====
 async function init() {
+  let lanIp = '';
   try {
     const h = await fetch('/api/health').then(r => r.json());
     document.getElementById('serverInfo').textContent = `端口 ${h.port}`;
     if (h.version) document.getElementById('appVersion').textContent = 'v' + h.version;
+    if (h.lan_ip) lanIp = h.lan_ip;
   } catch (e) {}
+  renderQrCode(lanIp);
   // 检查是否需要密码
   try {
     const a = await fetch('/api/auth/check', { headers: authPwd ? { 'X-Auth-Password': authPwd } : {} }).then(r => r.json());
@@ -705,18 +708,31 @@ function syncQueuePrinterSelect() {
 }
 
 // ===== 二维码 =====
-function renderQrCode() {
+// 用服务端返回的局域网 IP 生成二维码 URL（不依赖浏览器 location.origin，
+// 这样从任意机器/任意方式访问，扫出来的都是正确的内网地址）。
+// 用 img.src 渲染（幂等），避免重复调用时替换 DOM 导致报错。
+function renderQrCode(lanIp) {
   try {
-    var url = location.origin + '/';
+    const port = window.location.port ? ':' + window.location.port : '';
+    // 优先用服务端 lan_ip；拿不到时回退到 location.hostname
+    let host = lanIp || location.hostname;
+    const url = 'http://' + host + port + '/';
     document.getElementById('qrUrl').textContent = url;
     if (typeof QRCode !== 'undefined') {
-      // 把 img 换成 div 容器，qrcodejs 渲染进 div
-      var img = document.getElementById('qrcodeImg');
-      var box = document.createElement('div');
-      box.id = 'qrcodeBox';
-      box.style.cssText = 'width:96px;height:96px;border:1px solid #ddd;background:#fff;padding:4px;';
-      img.parentNode.replaceChild(box, img);
-      new QRCode(box, { text: url, width: 88, height: 88 });
+      const img = document.getElementById('qrcodeImg');
+      if (!img) return;
+      // qrcodejs 渲染进一个临时容器，再取 canvas 转 dataURL 给 img
+      const tmp = document.createElement('div');
+      new QRCode(tmp, { text: url, width: 88, height: 88 });
+      const canvas = tmp.querySelector('canvas');
+      if (canvas) {
+        img.src = canvas.toDataURL('image/png');
+        img.style.display = 'block';
+      } else {
+        // 某些实现直接生成 img 子元素
+        const innerImg = tmp.querySelector('img');
+        if (innerImg) { img.src = innerImg.src; img.style.display = 'block'; }
+      }
     }
   } catch (e) { /* 二维码非关键功能 */ }
 }

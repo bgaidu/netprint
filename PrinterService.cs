@@ -480,11 +480,13 @@ namespace PrintServer
             return null; // 交给系统 PATH 由 Process.Start 解析（只传文件名时）
         }
 
-        /// <summary>Office/PDF 文档：尝试 ShellExecute "print" 交给关联程序（Word/WPS/Acrobat 等）。</summary>
+        /// <summary>Office/PDF 文档：尝试 ShellExecute "print" 交给关联程序（Word/WPS/Acrobat 等）。
+        /// 以隐藏窗口(SW_HIDE)启动，避免打印时弹出关联程序窗口。</summary>
         private static bool PrintViaShell(string path, string printer, string jobName)
         {
             // 打印到默认打印机。若指定打印机非默认，Shell 打印默认使用系统默认打印机。
-            var result = ShellExecute(IntPtr.Zero, "print", path, null, Path.GetDirectoryName(path), 1);
+            // nShowCmd=0 (SW_HIDE): 关联程序窗口隐藏，静默打印不打扰用户
+            var result = ShellExecute(IntPtr.Zero, "print", path, null, Path.GetDirectoryName(path), 0);
             if (result.ToInt64() <= 32)
             {
                 LastError = "Shell 打印失败，错误码: " + result;
