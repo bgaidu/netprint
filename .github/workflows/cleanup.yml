@@ -1,0 +1,43 @@
+name: Cleanup Actions Storage
+on:
+  workflow_dispatch: # 允许你在网页上点按钮手动触发
+  schedule:
+    - cron: '0 0 * * *' # 每天自动跑一次
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete all artifacts
+        uses: actions/github-script@v7
+        with:
+          script: |
+            console.log("正在清理 Artifacts...");
+            const artifacts = await github.rest.actions.listArtifactsForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+            for (const artifact of artifacts.data.artifacts) {
+              await github.rest.actions.deleteArtifact({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                artifact_id: artifact.id,
+              });
+            }
+            
+      - name: Delete old caches
+        uses: actions/github-script@v7
+        with:
+          script: |
+            console.log("正在清理 Caches...");
+            const caches = await github.rest.actions.getActionsCacheList({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+            for (const cache of caches.data.actions_caches) {
+              await github.rest.actions.deleteActionsCacheById({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                cache_id: cache.id,
+              });
+            }
